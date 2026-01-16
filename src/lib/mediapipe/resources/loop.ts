@@ -1,3 +1,18 @@
+/**
+ * Loop Resource
+ *
+ * Main render loop for MediaPipe visualization.
+ * Worker-driven architecture: worker runs detection independently,
+ * main thread sends frames and handles rendering at 60 FPS.
+ *
+ * Flow:
+ *   1. Main thread creates ImageBitmap from video
+ *   2. Main thread sends bitmap to worker via pushFrame (zero-copy transfer)
+ *   3. Worker runs MediaPipe detection at its own rate
+ *   4. Worker sends results back via subscription
+ *   5. Main thread renders results to visible canvas
+ */
+
 import { defineResource } from 'braided'
 import type {
   FaceLandmarkerResult,
@@ -5,9 +20,8 @@ import type {
 } from '@mediapipe/tasks-vision'
 import { createAtom, createSubscription } from '../../state'
 import type { CameraAPI } from './camera'
-import type { FaceLandmarkerAPI } from './face-landmarker'
-import type { GestureRecognizerAPI } from './gesture-recognizer'
 import type { CanvasAPI } from './canvas'
+import type { DetectionWorkerAPI } from './detectionWorker'
 import type { FrameRaterAPI } from './frameRater'
 
 // Frame data emitted each tick
@@ -39,25 +53,20 @@ export type RenderContext = {
   mirrored: boolean
   paused: boolean
   cachedVideoFrame: ImageBitmap | null
-  // Viewport for video rendering (respects aspect ratio)
   viewport: {
     x: number
     y: number
     width: number
     height: number
   }
-  // Cached viewport (when landmarks were captured)
   cachedViewport: {
     x: number
     y: number
     width: number
     height: number
   } | null
-  // Frame raters for different execution rates
   frameRaters: LoopFrameRaters
-  // Precomputed per-tick decisions
   shouldRun: LoopShouldRun
-  // Record which tasks actually executed work this tick
   recordExecution: (key: LoopFrameRaterKey) => void
   offscreenCtx: CanvasRenderingContext2D
 }
@@ -69,44 +78,23 @@ export type LoopAPI = {
   frame$: ReturnType<typeof createSubscription<FrameData>>
   start: () => void
   stop: () => void
-  /**
-   * Pause frame capture (keeps rendering last frame)
-   */
   pause: () => void
-  /**
-   * Resume frame capture
-   */
   resume: () => void
-  /**
-   * Toggle pause state
-   */
   togglePause: () => void
-  /**
-   * Toggle mirrored/selfie mode
-   */
   toggleMirror: () => void
-  /**
-   * Set mirrored mode explicitly
-   */
   setMirrored: (mirrored: boolean) => void
-  /**
-   * Add a render task to the loop
-   * Returns an unsubscribe function
-   */
   addRenderTask: (task: RenderTask) => () => void
 }
 
 export type LoopDependencies = {
   camera: CameraAPI & { state: ReturnType<typeof createAtom<any>> }
-  faceLandmarker: FaceLandmarkerAPI
-  gestureRecognizer: GestureRecognizerAPI
+  detectionWorker: DetectionWorkerAPI
   canvas: CanvasAPI
   frameRater: FrameRaterAPI
 }
 
 /**
  * Calculate viewport that maintains video aspect ratio within canvas
- * Returns centered rectangle with letterboxing/pillarboxing as needed
  */
 const calculateViewport = (
   videoWidth: number,
@@ -125,11 +113,9 @@ const calculateViewport = (
   let viewportHeight: number
 
   if (canvasAspect > videoAspect) {
-    // Canvas is wider - pillarbox (black bars on sides)
     viewportHeight = canvasHeight
     viewportWidth = canvasHeight * videoAspect
   } else {
-    // Canvas is taller - letterbox (black bars on top/bottom)
     viewportWidth = canvasWidth
     viewportHeight = canvasWidth / videoAspect
   }
@@ -142,55 +128,39 @@ const calculateViewport = (
 
 const createFrameRaters = (frameRater: FrameRaterAPI) => {
   return {
-    // Variable timestep for rendering - never skip frames
     rendering: frameRater.variable('rendering', {
       targetFPS: 60,
       smoothingWindow: 10,
       maxDeltaMs: 100,
     }),
-    // Throttled for expensive data updates only
     videoStreamUpdate: frameRater.throttled('videoStreamUpdate', {
-      intervalMs: 1000 / 30, // 30 FPS - cache video frame
+      intervalMs: 1000 / 30,
     }),
-    faceDetection: frameRater.throttled('faceDetection', {
-      intervalMs: 1000 / 30, // 30 FPS
-    }),
-    gestureDetection: frameRater.throttled('gestureDetection', {
-      intervalMs: 1000 / 30, // 30 FPS
+    framePush: frameRater.throttled('framePush', {
+      intervalMs: 1000 / 30, // Push frames at 30 FPS
     }),
     backdrop: frameRater.throttled('backdrop', {
-      intervalMs: 1000 / 5, // 5 FPS
+      intervalMs: 1000 / 5,
     }),
   }
 }
 
 type LoopFrameRaters = ReturnType<typeof createFrameRaters>
-type LoopFrameRaterKey =
-  | 'backdrop'
-  | 'videoStreamUpdate'
-  | 'faceDetection'
-  | 'gestureDetection'
+type LoopFrameRaterKey = 'backdrop' | 'videoStreamUpdate'
 type LoopShouldRun = Record<LoopFrameRaterKey, boolean>
 
 export const loopResource = defineResource({
-  dependencies: [
-    'camera',
-    'faceLandmarker',
-    'gestureRecognizer',
-    'canvas',
-    'frameRater',
-  ] as const,
+  dependencies: ['camera', 'detectionWorker', 'canvas', 'frameRater'] as const,
   start: ({
     camera,
-    faceLandmarker,
-    gestureRecognizer,
+    detectionWorker,
     canvas,
     frameRater,
   }: LoopDependencies) => {
     const state = createAtom<LoopState>({
       running: false,
       paused: false,
-      mirrored: true, // Selfie mode on by default
+      mirrored: true,
       fps: 0,
       frameCount: 0,
     })
@@ -199,12 +169,11 @@ export const loopResource = defineResource({
     const renderTasks = new Set<RenderTask>()
 
     let rafId: number | null = null
-    // let updateIntervalId: number | null = null
     let lastRenderTimestamp = performance.now()
     let lastUpdateTimestamp = performance.now()
     let lastStreamVersion = camera.state.get().streamVersion ?? 0
 
-    // Cached frame data when paused / throttled updates
+    // Cached frame data
     let cachedFrameData: {
       faceResult: FaceLandmarkerResult | null
       gestureResult: GestureRecognizerResult | null
@@ -219,7 +188,7 @@ export const loopResource = defineResource({
 
     const frameRaters = createFrameRaters(frameRater)
 
-    // Reusable offscreen canvas for expensive operations
+    // Offscreen canvas for caching video frames
     const offscreenCanvas = document.createElement('canvas')
     const offscreenCtx = offscreenCanvas.getContext('2d', {
       willReadFrequently: true,
@@ -228,7 +197,81 @@ export const loopResource = defineResource({
       throw new Error('Failed to create offscreen canvas context')
     }
 
-    // Update loop - runs at fixed interval for data processing
+    /**
+     * Convert detection result from simplified schema to MediaPipe format
+     */
+    const convertDetectionResult = (result: {
+      faceResult: any
+      gestureResult: any
+      timestamp: number
+    }) => {
+      if (result.faceResult) {
+        cachedFrameData.faceResult = {
+          faceLandmarks: [result.faceResult.landmarks],
+          faceBlendshapes: result.faceResult.blendshapes
+            ? [{ categories: result.faceResult.blendshapes }]
+            : undefined,
+          facialTransformationMatrixes: result.faceResult
+            .facialTransformationMatrixes
+            ? [{ data: result.faceResult.facialTransformationMatrixes }]
+            : undefined,
+        } as any
+      } else {
+        cachedFrameData.faceResult = null
+      }
+
+      if (result.gestureResult) {
+        cachedFrameData.gestureResult = {
+          landmarks: result.gestureResult.hands.map((h: any) => h.landmarks),
+          worldLandmarks: result.gestureResult.hands.map(
+            (h: any) => h.worldLandmarks || [],
+          ),
+          handedness: result.gestureResult.hands.map((h: any) => [
+            { categoryName: h.handedness, score: 1.0 },
+          ]),
+          gestures: [result.gestureResult.gestures],
+        } as any
+      } else {
+        cachedFrameData.gestureResult = null
+      }
+
+      frame$.notify({
+        timestamp: result.timestamp,
+        video: camera.video,
+        faceResult: result.faceResult,
+        gestureResult: result.gestureResult,
+      })
+    }
+
+    /**
+     * Initialize worker detection
+     */
+    const initializeWorkerDetection = async () => {
+      console.log('[Loop] Initializing worker detection...')
+
+      // Initialize worker
+      await detectionWorker.initialize({
+        targetFPS: 30,
+        detectFace: true,
+        detectHands: true,
+      })
+
+      // Subscribe to detection results
+      detectionWorker.onDetectionResult((result) => {
+        convertDetectionResult({
+          faceResult: result.faceResult,
+          gestureResult: result.gestureResult,
+          timestamp: result.timestamp,
+        })
+      })
+
+      // Start detection loop
+      detectionWorker.startDetection()
+
+      console.log('[Loop] ✅ Worker detection initialized')
+    }
+
+    // Update loop - sends frames to worker
     const updateAsync = async () => {
       if (!state.get().running) return
 
@@ -245,10 +288,10 @@ export const loopResource = defineResource({
         canvas.width > 0 &&
         canvas.height > 0
 
+      // Handle stream version changes
       const currentStreamVersion = camera.state.get().streamVersion ?? 0
       if (currentStreamVersion !== lastStreamVersion) {
         lastStreamVersion = currentStreamVersion
-        // Close old bitmap before clearing
         if (cachedFrameData.videoFrame) {
           cachedFrameData.videoFrame.close()
         }
@@ -259,12 +302,11 @@ export const loopResource = defineResource({
           viewport: null,
         }
         frameRaters.videoStreamUpdate.reset()
-        frameRaters.faceDetection.reset()
-        frameRaters.gestureDetection.reset()
+        frameRaters.framePush.reset()
         frameRaters.rendering.reset()
       }
 
-      // Update FPS from frameRater (uses smoothed rendering FPS)
+      // Update FPS
       const currentFps = Math.round(frameRaters.rendering.getFPS())
       if (currentFps !== state.get().fps) {
         state.mutate((s) => {
@@ -273,157 +315,106 @@ export const loopResource = defineResource({
         })
       }
 
-      // Precompute should-run flags for this update tick
-      // When paused, freeze data updates
-      // Note: backdrop is handled in render loop, not update loop
       const shouldRun: LoopShouldRun = {
-        backdrop: false, // Backdrop is handled in render loop
+        backdrop: false,
         videoStreamUpdate:
           !isPaused && frameRaters.videoStreamUpdate.shouldExecute(deltaMs),
-        faceDetection:
-          !isPaused && frameRaters.faceDetection.shouldExecute(deltaMs),
-        gestureDetection:
-          !isPaused && frameRaters.gestureDetection.shouldExecute(deltaMs),
       }
+
+      const shouldPushFrame =
+        !isPaused && frameRaters.framePush.shouldExecute(deltaMs)
 
       const executed: Partial<Record<LoopFrameRaterKey, boolean>> = {}
 
-      // Run detection (throttled, only when not paused)
-      let faceResult: FaceLandmarkerResult | null = cachedFrameData.faceResult
-      let gestureResult: GestureRecognizerResult | null =
-        cachedFrameData.gestureResult
+      // Push frame to worker for detection
+      if (hasVideoFrame && shouldPushFrame && detectionWorker.isInitialized()) {
+        try {
+          // Create ImageBitmap from video
+          const bitmap = await createImageBitmap(video)
 
-      if (!isPaused && hasVideoFrame) {
-        if (shouldRun.faceDetection) {
-          try {
-            faceResult = faceLandmarker.detectForVideo(video, timestamp)
-            executed.faceDetection = true
-          } catch {
-            // Face detection failed, continue
-          }
+          // Send to worker (zero-copy transfer)
+          detectionWorker.pushFrame(bitmap, timestamp)
+
+          frameRaters.framePush.recordExecution()
+        } catch (error) {
+          console.warn('[Loop] Failed to push frame:', error)
+        }
+      }
+
+      // Cache video frame for rendering
+      if (!isPaused && hasVideoFrame && shouldRun.videoStreamUpdate) {
+        const cacheViewport = calculateViewport(
+          video.videoWidth,
+          video.videoHeight,
+          canvas.width,
+          canvas.height,
+        )
+
+        if (
+          offscreenCanvas.width !== canvas.width ||
+          offscreenCanvas.height !== canvas.height
+        ) {
+          offscreenCanvas.width = canvas.width
+          offscreenCanvas.height = canvas.height
         }
 
-        if (shouldRun.gestureDetection) {
-          try {
-            gestureResult = gestureRecognizer.recognizeForVideo(
-              video,
-              timestamp,
-            )
-            executed.gestureDetection = true
-          } catch {
-            // Gesture recognition failed, continue
-          }
-        }
+        offscreenCtx.clearRect(
+          0,
+          0,
+          offscreenCanvas.width,
+          offscreenCanvas.height,
+        )
 
-        // Update cached video frame at its own rate
-        if (shouldRun.videoStreamUpdate) {
-          // Calculate viewport for caching
-          const cacheViewport = calculateViewport(
-            video.videoWidth,
-            video.videoHeight,
-            canvas.width,
-            canvas.height,
+        if (state.get().mirrored) {
+          offscreenCtx.save()
+          offscreenCtx.translate(
+            cacheViewport.x + cacheViewport.width,
+            cacheViewport.y,
           )
-
-          // Ensure offscreen canvas is sized correctly
-          if (
-            offscreenCanvas.width !== canvas.width ||
-            offscreenCanvas.height !== canvas.height
-          ) {
-            offscreenCanvas.width = canvas.width
-            offscreenCanvas.height = canvas.height
-          }
-
-          // Cache the video frame using reusable offscreen canvas
-          offscreenCtx.clearRect(
+          offscreenCtx.scale(-1, 1)
+          offscreenCtx.drawImage(
+            video,
             0,
             0,
-            offscreenCanvas.width,
-            offscreenCanvas.height,
+            cacheViewport.width,
+            cacheViewport.height,
           )
-
-          // Draw video to offscreen canvas within viewport with mirroring if needed
-          if (state.get().mirrored) {
-            offscreenCtx.save()
-            offscreenCtx.translate(
-              cacheViewport.x + cacheViewport.width,
-              cacheViewport.y,
-            )
-            offscreenCtx.scale(-1, 1)
-            offscreenCtx.drawImage(
-              video,
-              0,
-              0,
-              cacheViewport.width,
-              cacheViewport.height,
-            )
-            offscreenCtx.restore()
-          } else {
-            offscreenCtx.drawImage(
-              video,
-              cacheViewport.x,
-              cacheViewport.y,
-              cacheViewport.width,
-              cacheViewport.height,
-            )
-          }
-
-          // Cache using createImageBitmap - much faster than getImageData!
-          // No CPU-GPU sync required, stays GPU-resident
-          try {
-            // Close previous bitmap to free memory
-            if (cachedFrameData.videoFrame) {
-              cachedFrameData.videoFrame.close()
-            }
-
-            // Create ImageBitmap from the offscreen canvas
-            cachedFrameData.videoFrame = await createImageBitmap(
-              offscreenCanvas,
-              cacheViewport.x,
-              cacheViewport.y,
-              cacheViewport.width,
-              cacheViewport.height,
-            )
-            cachedFrameData.viewport = cacheViewport
-            executed.videoStreamUpdate = true
-          } catch (error) {
-            console.warn('Failed to cache video frame:', error)
-          }
+          offscreenCtx.restore()
+        } else {
+          offscreenCtx.drawImage(
+            video,
+            cacheViewport.x,
+            cacheViewport.y,
+            cacheViewport.width,
+            cacheViewport.height,
+          )
         }
 
-        // Update cached detection results (only when not paused)
-        cachedFrameData.faceResult = faceResult
-        cachedFrameData.gestureResult = gestureResult
+        try {
+          if (cachedFrameData.videoFrame) {
+            cachedFrameData.videoFrame.close()
+          }
+          cachedFrameData.videoFrame = await createImageBitmap(
+            offscreenCanvas,
+            cacheViewport.x,
+            cacheViewport.y,
+            cacheViewport.width,
+            cacheViewport.height,
+          )
+          cachedFrameData.viewport = cacheViewport
+          executed.videoStreamUpdate = true
+        } catch (error) {
+          console.warn('Failed to cache video frame:', error)
+        }
       }
 
       if (!hasVideoFrame) {
-        // Avoid MediaPipe processing when video is not ready
-        faceResult = null
-        gestureResult = null
+        cachedFrameData.faceResult = null
+        cachedFrameData.gestureResult = null
       }
 
-      // Emit frame data for external subscribers when detection ran
-      if (
-        !isPaused &&
-        (shouldRun.faceDetection || shouldRun.gestureDetection)
-      ) {
-        frame$.notify({
-          timestamp,
-          video,
-          faceResult,
-          gestureResult,
-        })
-      }
-
-      // Record executions after updates complete
       if (executed.videoStreamUpdate) {
         frameRaters.videoStreamUpdate.recordExecution()
-      }
-      if (executed.faceDetection) {
-        frameRaters.faceDetection.recordExecution()
-      }
-      if (executed.gestureDetection) {
-        frameRaters.gestureDetection.recordExecution()
       }
     }
 
@@ -433,7 +424,7 @@ export const loopResource = defineResource({
       })
     }
 
-    // Render loop - runs on RAF for smooth visuals
+    // Render loop
     const render = () => {
       if (!state.get().running) return
 
@@ -444,10 +435,8 @@ export const loopResource = defineResource({
       const video = camera.video
       const isPaused = state.get().paused
 
-      // Clear canvas
       canvas.clear()
 
-      // Calculate viewport that respects video aspect ratio
       const viewport = calculateViewport(
         video.videoWidth,
         video.videoHeight,
@@ -455,7 +444,6 @@ export const loopResource = defineResource({
         canvas.height,
       )
 
-      // Resize offscreen canvas if needed
       if (
         offscreenCanvas.width !== canvas.width ||
         offscreenCanvas.height !== canvas.height
@@ -464,15 +452,9 @@ export const loopResource = defineResource({
         offscreenCanvas.height = canvas.height
       }
 
-      // Precompute should-run flags for render tasks
       const shouldRunBackdrop = frameRaters.backdrop.shouldExecute(deltaMs)
-
-      // Track which render tasks executed
       const renderExecuted: Partial<Record<LoopFrameRaterKey, boolean>> = {}
 
-      // Build render context with latest cached data
-      // Note: Landmarks don't need rescaling! They're normalized (0-1) relative to video
-      // and the render tasks transform them using the CURRENT viewport
       const renderContext: RenderContext = {
         ctx: canvas.ctx,
         drawer: canvas.drawer,
@@ -492,8 +474,6 @@ export const loopResource = defineResource({
         shouldRun: {
           backdrop: shouldRunBackdrop,
           videoStreamUpdate: false,
-          faceDetection: false,
-          gestureDetection: false,
         },
         recordExecution: (key: LoopFrameRaterKey) => {
           renderExecuted[key] = true
@@ -501,7 +481,6 @@ export const loopResource = defineResource({
         offscreenCtx,
       }
 
-      // Execute all render tasks
       for (const task of renderTasks) {
         try {
           task(renderContext)
@@ -510,15 +489,11 @@ export const loopResource = defineResource({
         }
       }
 
-      // Record executions for throttled render tasks
       if (renderExecuted.backdrop) {
         frameRaters.backdrop.recordExecution()
       }
 
-      // Record rendering frame (always happens)
       frameRaters.rendering.recordFrame(deltaMs)
-
-    //   rafId = requestAnimationFrame(render)
     }
 
     const tick = () => {
@@ -533,19 +508,20 @@ export const loopResource = defineResource({
 
       start: () => {
         if (state.get().running) return
-        state.update((s) => {
-          return {
-            ...s,
-            running: true,
-          }
-        })
+        state.update((s) => ({ ...s, running: true }))
         lastRenderTimestamp = performance.now()
         lastUpdateTimestamp = performance.now()
 
-        // Start update loop at ~30 FPS (33ms interval)
-        // updateIntervalId = window.setInterval(update, 33)
+        // Initialize worker detection on first start
+        if (!detectionWorker.isInitialized()) {
+          initializeWorkerDetection().catch((error) => {
+            console.error(
+              '[Loop] Failed to initialize worker detection:',
+              error,
+            )
+          })
+        }
 
-        // Start render loop on RAF
         rafId = requestAnimationFrame(tick)
       },
 
@@ -557,11 +533,6 @@ export const loopResource = defineResource({
           cancelAnimationFrame(rafId)
           rafId = null
         }
-        // if (updateIntervalId !== null) {
-        //   clearInterval(updateIntervalId)
-        //   updateIntervalId = null
-        // }
-        // Clean up ImageBitmap to free GPU memory
         if (cachedFrameData.videoFrame) {
           cachedFrameData.videoFrame.close()
           cachedFrameData.videoFrame = null
@@ -569,24 +540,15 @@ export const loopResource = defineResource({
       },
 
       pause: () => {
-        state.update((s) => {
-          return {
-            ...s,
-            paused: true,
-          }
-        })
+        state.update((s) => ({ ...s, paused: true }))
+        detectionWorker.sendCommand({ type: 'pause' })
       },
 
       resume: () => {
-        state.update((s) => {
-          return {
-            ...s,
-            paused: false,
-          }
-        })
-        // Reset timestamps on resume
+        state.update((s) => ({ ...s, paused: false }))
         lastRenderTimestamp = performance.now()
         lastUpdateTimestamp = performance.now()
+        detectionWorker.sendCommand({ type: 'resume' })
       },
 
       togglePause: () => {

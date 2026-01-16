@@ -22,6 +22,9 @@ const config = defineConfig({
     }),
     viteReact(),
   ],
+  worker: {
+    format: 'iife', // Use classic worker format for MediaPipe compatibility
+  },
 })
 
 export default config

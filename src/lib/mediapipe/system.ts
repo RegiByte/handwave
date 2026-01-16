@@ -8,38 +8,34 @@
  *
  *   camera (no deps)
  *       ↓
- *   vision (no deps)
- *       ↓
- *   faceLandmarker ← vision
- *   gestureRecognizer ← vision
+ *   detectionWorker (no deps) - Web Worker for MediaPipe detection
  *       ↓
  *   canvas (no deps)
  *       ↓
- *   loop ← camera, faceLandmarker, gestureRecognizer, canvas
+ *   loop ← camera, detectionWorker, canvas
  *       ↓
  *   runtime ← camera, loop
  *       ↓
  *   shortcuts ← runtime
+ *
+ * Note: Detection now runs in Web Worker for 60 FPS rendering!
+ * The worker loads MediaPipe models independently and processes frames off the main thread.
  */
 
 import type { StartedSystem } from 'braided'
 import { createSystemHooks, createSystemManager } from 'braided-react'
 import { cameraResource } from './resources/camera'
 import { canvasResource } from './resources/canvas'
-import { faceLandmarkerResource } from './resources/face-landmarker'
+import { detectionWorkerResource } from './resources/detectionWorker'
 import { frameRater } from './resources/frameRater'
-import { gestureRecognizerResource } from './resources/gesture-recognizer'
 import { loopResource } from './resources/loop'
 import { runtimeResource } from './resources/runtime'
 import { shortcutsResource } from './resources/shortcuts'
-import { visionResource } from './resources/vision'
 
 // System configuration - defines the resource graph
 export const mediapipeSystemConfig = {
   camera: cameraResource,
-  vision: visionResource,
-  faceLandmarker: faceLandmarkerResource,
-  gestureRecognizer: gestureRecognizerResource,
+  detectionWorker: detectionWorkerResource,
   canvas: canvasResource,
   frameRater: frameRater,
   loop: loopResource,

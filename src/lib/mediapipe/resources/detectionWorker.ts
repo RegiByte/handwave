@@ -1,0 +1,242 @@
+/**
+ * Detection Worker Client Resource
+ *
+ * Braided resource that manages the detection worker lifecycle.
+ * Worker-driven architecture: worker runs its own detection loop,
+ * main thread sends video frames as ImageBitmap.
+ *
+ * This resource:
+ * - Initializes the worker braided system
+ * - Sends video frames to worker via pushFrame
+ * - Starts/stops the worker's detection loop
+ * - Receives detection results via subscriptions
+ * - Integrates with the Braided resource system
+ */
+
+import type { StartedResource } from 'braided'
+import { defineResource } from 'braided'
+import { detectionKeywords } from '../vocabulary/detectionKeywords'
+import type { DetectionResult } from '../vocabulary/detectionSchemas'
+import { systemTasks } from './worker/kernel/systemTasks'
+import { createClientResource } from '@/lib/workerTasks/client'
+import { createSubscription } from '@/lib/state'
+
+// Model URLs (CDN-hosted MediaPipe models)
+const MODEL_PATHS = {
+  faceLandmarker:
+    'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+  gestureRecognizer:
+    'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
+  visionWasmPath:
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+}
+
+// Create the worker client with system tasks only
+const workerClient = createClientResource(
+  () => import('./worker/kernel/workerScript?worker'),
+  systemTasks,
+)
+
+/**
+ * Detection worker client resource
+ *
+ * Usage in system:
+ *   const system = {
+ *     detectionWorker: detectionWorkerResource,
+ *     // ... other resources
+ *   }
+ *
+ * Usage in code:
+ *   const worker = useResource('detectionWorker')
+ *   await worker.initialize()
+ *   worker.startDetection()
+ *   // In render loop:
+ *   worker.pushFrame(imageBitmap, timestamp)
+ *   worker.onDetectionResult((result) => { ... })
+ */
+export const detectionWorkerResource = defineResource({
+  dependencies: [],
+  start: async () => {
+    console.log('[Detection Worker Resource] Starting...')
+
+    // Start the worker
+    const worker = workerClient.start()
+
+    // Wait for worker to be ready
+    await new Promise<void>((resolve) => {
+      const checkReady = () => {
+        const status = worker.getStatus()
+        if (status === 'ready') {
+          resolve()
+        } else if (status === 'error' || status === 'terminated') {
+          throw new Error(`Worker failed to start: ${status}`)
+        } else {
+          setTimeout(checkReady, 100)
+        }
+      }
+      checkReady()
+    })
+
+    console.log('[Detection Worker Resource] ✅ Worker ready')
+
+    // Subscription for detection results
+    const resultSubscription = createSubscription<DetectionResult>()
+
+    // Track initialization state
+    let initialized = false
+
+    /**
+     * Initialize the worker braided system and load models
+     */
+    const initialize = async (options?: {
+      targetFPS?: number
+      detectFace?: boolean
+      detectHands?: boolean
+    }): Promise<void> => {
+      console.log('[Detection Worker Resource] Initializing...')
+
+      // Initialize the worker braided system
+      await new Promise<void>((resolve, reject) => {
+        worker
+          .dispatch(detectionKeywords.tasks.initializeWorker, {
+            modelPaths: MODEL_PATHS,
+            faceLandmarkerConfig: {
+              numFaces: 1,
+              minFaceDetectionConfidence: 0.5,
+              minFacePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+              outputFaceBlendshapes: true,
+              outputFacialTransformationMatrixes: true,
+            },
+            gestureRecognizerConfig: {
+              numHands: 2,
+              minHandDetectionConfidence: 0.5,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            },
+            targetFPS: options?.targetFPS ?? 30,
+          })
+          .onComplete((result) => {
+            if (result.success) {
+              console.log(
+                `[Detection Worker Resource] ✅ System initialized in ${result.initTimeMs?.toFixed(0)}ms`,
+              )
+              resolve()
+            } else {
+              reject(new Error(result.message))
+            }
+          })
+          .onError((error) => {
+            reject(new Error(error))
+          })
+      })
+
+      initialized = true
+      console.log('[Detection Worker Resource] ✅ Ready for detection')
+    }
+
+    /**
+     * Push a video frame to the worker
+     * Worker will use this frame for detection on next tick
+     * Frame is transferred (zero-copy)
+     */
+    const pushFrame = (frame: ImageBitmap, timestamp: number): void => {
+      if (!initialized) {
+        return // Silently ignore if not initialized
+      }
+
+      worker.dispatch(
+        detectionKeywords.tasks.pushFrame,
+        { frame, timestamp },
+        [frame], // Transfer the bitmap (zero-copy)
+      )
+    }
+
+    /**
+     * Start the detection loop
+     */
+    const startDetection = (): void => {
+      if (!initialized) {
+        console.warn('[Detection Worker Resource] Not initialized. Call initialize() first.')
+        return
+      }
+
+      worker
+        .dispatch(detectionKeywords.tasks.startDetection, {})
+        .onProgress((progress) => {
+          if (progress.type === 'detection') {
+            const event = progress.event
+            if (event.type === detectionKeywords.events.frame) {
+              resultSubscription.notify(event.result)
+            }
+          }
+        })
+        .onComplete(() => {
+          console.log('[Detection Worker Resource] Detection loop started')
+        })
+        .onError((error) => {
+          console.error('[Detection Worker Resource] Failed to start detection:', error)
+        })
+    }
+
+    /**
+     * Stop the detection loop
+     */
+    const stopDetection = (): void => {
+      worker
+        .dispatch(detectionKeywords.tasks.stopDetection, {})
+        .onComplete(() => {
+          console.log('[Detection Worker Resource] Detection loop stopped')
+        })
+    }
+
+    /**
+     * Send command to worker
+     */
+    const sendCommand = (
+      command:
+        | { type: 'start' }
+        | { type: 'stop' }
+        | { type: 'pause' }
+        | { type: 'resume' }
+        | { type: 'setTargetFPS'; fps: number }
+        | { type: 'setDetectionSettings'; detectFace?: boolean; detectHands?: boolean },
+    ): void => {
+      worker.dispatch(detectionKeywords.tasks.command, { command })
+    }
+
+    // Return the worker API
+    return {
+      // Core API
+      initialize,
+      pushFrame,
+      startDetection,
+      stopDetection,
+      sendCommand,
+      onDetectionResult: resultSubscription.subscribe,
+      isInitialized: () => initialized,
+
+      // Base worker API (for advanced usage)
+      dispatch: worker.dispatch,
+      getStatus: worker.getStatus,
+      terminate: worker.terminate,
+
+      // Cleanup
+      cleanup: () => {
+        resultSubscription.clear()
+      },
+    }
+  },
+  halt: (worker) => {
+    console.log('[Detection Worker Resource] Halting...')
+    worker.cleanup()
+
+    if (worker.isInitialized()) {
+      worker.dispatch(detectionKeywords.tasks.haltWorker, {})
+    }
+
+    worker.terminate()
+  },
+})
+
+export type DetectionWorkerAPI = StartedResource<typeof detectionWorkerResource>

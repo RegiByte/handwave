@@ -33,22 +33,14 @@ export type RenderContext = {
   frameRaters: {
     rendering: ReturnType<FrameRaterAPI['variable']>
     videoStreamUpdate: ReturnType<FrameRaterAPI['throttled']>
-    faceDetection: ReturnType<FrameRaterAPI['throttled']>
-    gestureDetection: ReturnType<FrameRaterAPI['throttled']>
+    framePush: ReturnType<FrameRaterAPI['throttled']>
+    backdrop: ReturnType<FrameRaterAPI['throttled']>
   }
   shouldRun: {
     backdrop: boolean
     videoStreamUpdate: boolean
-    faceDetection: boolean
-    gestureDetection: boolean
   }
-  recordExecution: (
-    key:
-      | 'backdrop'
-      | 'videoStreamUpdate'
-      | 'faceDetection'
-      | 'gestureDetection',
-  ) => void
+  recordExecution: (key: 'backdrop' | 'videoStreamUpdate') => void
   offscreenCtx: CanvasRenderingContext2D
 }
 
