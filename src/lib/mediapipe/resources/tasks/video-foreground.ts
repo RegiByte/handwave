@@ -14,9 +14,15 @@ export const videoForegroundTask: RenderTask = ({
   cachedVideoFrame,
   viewport,
   cachedViewport,
+  shouldRender,
 }) => {
   // When paused with cached frame (ImageBitmap)
   if (paused && cachedVideoFrame && cachedViewport) {
+    if (!shouldRender.videoForeground) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.9)'
+      ctx.fillRect(viewport.x, viewport.y, viewport.width, viewport.height)
+      return
+    }
     // ImageBitmap can be drawn directly with drawImage - GPU-to-GPU!
     ctx.drawImage(
       cachedVideoFrame,
@@ -33,7 +39,7 @@ export const videoForegroundTask: RenderTask = ({
   }
 
   // When not paused, draw the live video within viewport with mirroring if needed
-  if (!paused) {
+  if (!paused && shouldRender.videoForeground) {
     if (mirrored) {
       ctx.save()
       ctx.translate(viewport.x + viewport.width, viewport.y)
@@ -49,5 +55,11 @@ export const videoForegroundTask: RenderTask = ({
         viewport.height,
       )
     }
+  }
+
+  if (!shouldRender.videoForeground) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)'
+    ctx.fillRect(viewport.x, viewport.y, viewport.width, viewport.height)
+    return
   }
 }

@@ -40,6 +40,9 @@ export type RenderContext = {
     backdrop: boolean
     videoStreamUpdate: boolean
   }
+  shouldRender: {
+    videoForeground: boolean
+  }
   recordExecution: (key: 'backdrop' | 'videoStreamUpdate') => void
   offscreenCtx: CanvasRenderingContext2D
 }

@@ -3,7 +3,7 @@
  *
  * Runs MediaPipe detection on video frames.
  * Worker owns its internal canvas - main thread sends ImageBitmap frames.
- * Writes results to output (message passing for now, SharedArrayBuffer later).
+ * Writes results to SharedArrayBuffer (zero-copy) or message passing (fallback).
  *
  * Philosophy: Pure detection logic. No loop management.
  * Called by workerUpdateLoop each tick.
@@ -20,6 +20,7 @@ import type {
   FaceResult,
   GestureResult,
 } from '../../vocabulary/detectionSchemas'
+import { writeDetectionResults } from '../../shared/detectionWrite'
 import type { WorkerStoreResource } from './workerStore'
 import type { WorkerVisionResource } from './workerVision'
 import { createSubscription } from '@/lib/state'
@@ -184,6 +185,9 @@ export const workerDetectors = defineResource({
     /**
      * Run detection on a single frame
      * Returns detection result
+     *
+     * When SharedArrayBuffer is enabled, writes raw MediaPipe results to buffer.
+     * Always returns converted result for message passing (can be used as fallback).
      */
     const detect = (input: DetectionInput): DetectionOutput => {
       const start = performance.now()
@@ -192,6 +196,11 @@ export const workerDetectors = defineResource({
       // Get strictly increasing timestamp for MediaPipe
       const mediaPipeTimestamp = getMediaPipeTimestamp(input.timestamp)
 
+      // Raw MediaPipe results (for SharedArrayBuffer)
+      let rawFaceResult: FaceLandmarkerResult | null = null
+      let rawGestureResult: GestureRecognizerResult | null = null
+
+      // Converted results (for message passing)
       let faceResult: FaceResult | null = null
       let gestureResult: GestureResult | null = null
 
@@ -200,20 +209,31 @@ export const workerDetectors = defineResource({
 
         // Run face detection
         if (detectFace && workerVision.faceLandmarker) {
-          const result = workerVision.faceLandmarker.detectForVideo(
+          rawFaceResult = workerVision.faceLandmarker.detectForVideo(
             source,
             mediaPipeTimestamp,
           )
-          faceResult = convertFaceResult(result)
+          faceResult = convertFaceResult(rawFaceResult)
         }
 
         // Run hand/gesture detection
         if (detectHands && workerVision.gestureRecognizer) {
-          const result = workerVision.gestureRecognizer.recognizeForVideo(
+          rawGestureResult = workerVision.gestureRecognizer.recognizeForVideo(
             source,
             mediaPipeTimestamp,
           )
-          gestureResult = convertGestureResult(result)
+          gestureResult = convertGestureResult(rawGestureResult)
+        }
+
+        // Write to SharedArrayBuffer if enabled
+        const sharedBufferViews = workerStore.getSharedBufferViews()
+        if (sharedBufferViews) {
+          writeDetectionResults(
+            sharedBufferViews,
+            rawFaceResult,
+            rawGestureResult,
+            input.timestamp,
+          )
         }
       } catch (error) {
         console.error('[WorkerDetectors] Detection error:', error)
@@ -228,7 +248,7 @@ export const workerDetectors = defineResource({
         timestamp: input.timestamp,
       }
 
-      // Update cache and notify
+      // Update cache and notify (message passing path)
       latestResult = output
       workerStore.setLastDetectionTime(processingTimeMs)
       workerStore.incrementFrameCount()

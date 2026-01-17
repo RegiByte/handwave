@@ -13,6 +13,7 @@
  *   5. Main thread renders results to visible canvas
  */
 
+import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
 import type {
   FaceLandmarkerResult,
@@ -23,6 +24,7 @@ import type { CameraAPI } from './camera'
 import type { CanvasAPI } from './canvas'
 import type { DetectionWorkerAPI } from './detectionWorker'
 import type { FrameRaterAPI } from './frameRater'
+import type { RenderContext } from './tasks/types'
 
 // Frame data emitted each tick
 export type FrameData = {
@@ -38,53 +40,12 @@ export type LoopState = {
   mirrored: boolean
   fps: number
   frameCount: number
-}
-
-export type RenderContext = {
-  ctx: CanvasRenderingContext2D
-  drawer: CanvasAPI['drawer']
-  width: number
-  height: number
-  video: HTMLVideoElement
-  faceResult: FaceLandmarkerResult | null
-  gestureResult: GestureRecognizerResult | null
-  timestamp: number
-  deltaMs: number
-  mirrored: boolean
-  paused: boolean
-  cachedVideoFrame: ImageBitmap | null
-  viewport: {
-    x: number
-    y: number
-    width: number
-    height: number
+  shouldRender: {
+    videoForeground: boolean
   }
-  cachedViewport: {
-    x: number
-    y: number
-    width: number
-    height: number
-  } | null
-  frameRaters: LoopFrameRaters
-  shouldRun: LoopShouldRun
-  recordExecution: (key: LoopFrameRaterKey) => void
-  offscreenCtx: CanvasRenderingContext2D
 }
 
 export type RenderTask = (context: RenderContext) => void
-
-export type LoopAPI = {
-  state: ReturnType<typeof createAtom<LoopState>>
-  frame$: ReturnType<typeof createSubscription<FrameData>>
-  start: () => void
-  stop: () => void
-  pause: () => void
-  resume: () => void
-  togglePause: () => void
-  toggleMirror: () => void
-  setMirrored: (mirrored: boolean) => void
-  addRenderTask: (task: RenderTask) => () => void
-}
 
 export type LoopDependencies = {
   camera: CameraAPI & { state: ReturnType<typeof createAtom<any>> }
@@ -163,6 +124,9 @@ export const loopResource = defineResource({
       mirrored: true,
       fps: 0,
       frameCount: 0,
+      shouldRender: {
+        videoForeground: true,
+      },
     })
 
     const frame$ = createSubscription<FrameData>()
@@ -256,14 +220,22 @@ export const loopResource = defineResource({
         detectHands: true,
       })
 
-      // Subscribe to detection results
-      detectionWorker.onDetectionResult((result) => {
-        convertDetectionResult({
-          faceResult: result.faceResult,
-          gestureResult: result.gestureResult,
-          timestamp: result.timestamp,
+      // Try to initialize SharedArrayBuffer for zero-copy results
+      const sharedBufferEnabled = await detectionWorker.initializeSharedBuffer()
+
+      if (sharedBufferEnabled) {
+        console.log('[Loop] ✅ Using SharedArrayBuffer for zero-copy results')
+      } else {
+        console.log('[Loop] Using message passing for results (fallback)')
+        // Subscribe to detection results (fallback when SharedArrayBuffer not available)
+        detectionWorker.onDetectionResult((result) => {
+          convertDetectionResult({
+            faceResult: result.faceResult,
+            gestureResult: result.gestureResult,
+            timestamp: result.timestamp,
+          })
         })
-      })
+      }
 
       // Start detection loop
       detectionWorker.startDetection()
@@ -433,7 +405,9 @@ export const loopResource = defineResource({
       lastRenderTimestamp = timestamp
 
       const video = camera.video
-      const isPaused = state.get().paused
+      const loopState = state.get()
+      const isPaused = loopState.paused
+      const shouldRender = loopState.shouldRender
 
       canvas.clear()
 
@@ -452,10 +426,21 @@ export const loopResource = defineResource({
         offscreenCanvas.height = canvas.height
       }
 
+      // Read detection results from SharedArrayBuffer if enabled (zero-copy!)
+      // This happens every render frame - no message passing overhead
+      if (detectionWorker.isSharedBufferEnabled()) {
+        const sharedResults = detectionWorker.readDetectionResults()
+        if (sharedResults) {
+          // Update cached frame data with results from SharedArrayBuffer
+          cachedFrameData.faceResult = sharedResults.faceResult
+          cachedFrameData.gestureResult = sharedResults.gestureResult
+        }
+      }
+
       const shouldRunBackdrop = frameRaters.backdrop.shouldExecute(deltaMs)
       const renderExecuted: Partial<Record<LoopFrameRaterKey, boolean>> = {}
 
-      const renderContext: RenderContext = {
+      const renderContext = {
         ctx: canvas.ctx,
         drawer: canvas.drawer,
         width: canvas.width,
@@ -475,11 +460,12 @@ export const loopResource = defineResource({
           backdrop: shouldRunBackdrop,
           videoStreamUpdate: false,
         },
+        shouldRender: shouldRender,
         recordExecution: (key: LoopFrameRaterKey) => {
           renderExecuted[key] = true
         },
         offscreenCtx,
-      }
+      } satisfies RenderContext
 
       for (const task of renderTasks) {
         try {
@@ -502,7 +488,7 @@ export const loopResource = defineResource({
       rafId = requestAnimationFrame(tick)
     }
 
-    const api: LoopAPI = {
+    const api = {
       state,
       frame$,
 
@@ -572,6 +558,16 @@ export const loopResource = defineResource({
         renderTasks.add(task)
         return () => renderTasks.delete(task)
       },
+
+      toggleRendering: (key: 'videoForeground') => {
+        state.update((s) => ({
+          ...s,
+          shouldRender: {
+            ...s.shouldRender,
+            [key]: !s.shouldRender[key as keyof typeof s.shouldRender],
+          },
+        }))
+      },
     }
 
     return api
@@ -581,3 +577,5 @@ export const loopResource = defineResource({
     loop.frame$.clear()
   },
 })
+
+export type LoopAPI = StartedResource<typeof loopResource>

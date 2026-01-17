@@ -16,6 +16,9 @@ export const detectionKeywords = {
     // Frame input
     pushFrame: 'detection/pushFrame',
 
+    // SharedArrayBuffer
+    attachSharedBuffer: 'detection/attachSharedBuffer',
+
     // Commands
     command: 'detection/command',
   },

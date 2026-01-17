@@ -110,6 +110,10 @@ export const shortcutsResource = defineResource({
         console.log('[Shortcuts] Toggling debug mode')
         runtime.commands.toggleDebugMode()
       },
+      toggleVideoForeground: () => {
+        console.log('[Shortcuts] Toggling video foreground')
+        runtime.commands.toggleVideoForeground()
+      },
     }
 
     // ========================================================================
@@ -120,6 +124,9 @@ export const shortcutsResource = defineResource({
       togglePause: throttle(commands.togglePause, { wait: 100 }),
       toggleMirror: throttle(commands.toggleMirror, { wait: 100 }),
       toggleDebugMode: throttle(commands.toggleDebugMode, { wait: 100 }),
+      toggleVideoForeground: throttle(commands.toggleVideoForeground, {
+        wait: 100,
+      }),
     }
 
     // ========================================================================
@@ -138,6 +145,10 @@ export const shortcutsResource = defineResource({
       {
         keymaps: ['d', 'shift+d'],
         handler: () => throttledCommands.toggleDebugMode(),
+      },
+      {
+        keymaps: ['v'],
+        handler: () => throttledCommands.toggleVideoForeground(),
       },
     ]
 

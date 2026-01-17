@@ -26,13 +26,16 @@ export const createVideoBackdropTask = (): RenderTask => {
     height,
     mirrored,
     shouldRun,
+    paused,
     recordExecution,
   }) => {
     // Check if we need to recompute the backdrop
     const sizeChanged = width !== cachedWidth || height !== cachedHeight
     const mirrorChanged = mirrored !== cachedMirrored
     const shouldRecompute =
-      (shouldRun.backdrop || sizeChanged || mirrorChanged) && !pendingBackdrop
+      (shouldRun.backdrop || sizeChanged || mirrorChanged) &&
+      !pendingBackdrop &&
+      !paused
 
     // Recompute the blurred backdrop at throttled rate (or when size/mirror changes)
     if (shouldRecompute && offscreenCtx) {

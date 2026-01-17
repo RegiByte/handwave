@@ -25,6 +25,10 @@ export const Route = createRootRoute({
       },
     ],
   }),
+  headers: () => ({
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+  }),
 
   shellComponent: RootDocument,
 })

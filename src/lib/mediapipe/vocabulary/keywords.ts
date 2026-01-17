@@ -30,6 +30,7 @@ export const mediapipeKeywords = {
     toggleFaceLandmarkLabels: 'toggleFaceLandmarkLabels',
     toggleBlendshapesDisplay: 'toggleBlendshapesDisplay',
     toggleHandCoordinates: 'toggleHandCoordinates',
+    toggleVideoForeground: 'toggleVideoForeground',
   },
   events: {
     // Lifecycle

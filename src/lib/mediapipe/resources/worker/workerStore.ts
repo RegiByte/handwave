@@ -14,6 +14,7 @@ import type {
   GestureRecognizerConfig,
   ModelPaths,
 } from '../../vocabulary/detectionSchemas'
+import type { DetectionBufferViews } from '../../shared/detectionBuffer'
 import { createAtom } from '@/lib/state'
 
 // ============================================================================
@@ -43,6 +44,11 @@ export type WorkerStoreState = {
     detectHands: boolean
     targetFPS: number
   }
+
+  // SharedArrayBuffer mode (when enabled, results written to buffer)
+  sharedBuffer: {
+    enabled: boolean
+  }
 }
 
 // ============================================================================
@@ -59,7 +65,7 @@ const defaultModelPaths: ModelPaths = {
 }
 
 const defaultFaceLandmarkerConfig: FaceLandmarkerConfig = {
-  numFaces: 1,
+  numFaces: 2, // Support up to 2 faces
   minFaceDetectionConfidence: 0.5,
   minFacePresenceConfidence: 0.5,
   minTrackingConfidence: 0.5,
@@ -68,7 +74,7 @@ const defaultFaceLandmarkerConfig: FaceLandmarkerConfig = {
 }
 
 const defaultGestureRecognizerConfig: GestureRecognizerConfig = {
-  numHands: 2,
+  numHands: 4, // Support up to 4 hands
   minHandDetectionConfidence: 0.5,
   minHandPresenceConfidence: 0.5,
   minTrackingConfidence: 0.5,
@@ -91,6 +97,9 @@ const createDefaultState = (): WorkerStoreState => ({
     detectFace: true,
     detectHands: true,
     targetFPS: 30,
+  },
+  sharedBuffer: {
+    enabled: false,
   },
 })
 
@@ -118,15 +127,38 @@ export const createWorkerStore = (initialState?: Partial<WorkerStoreState>) =>
           ...defaultState.detection,
           ...initialState?.detection,
         },
+        sharedBuffer: {
+          ...defaultState.sharedBuffer,
+          ...initialState?.sharedBuffer,
+        },
       }
 
       const store = createAtom<WorkerStoreState>(mergedState)
+
+      // SharedArrayBuffer views (stored outside of atom for performance)
+      let sharedBufferViews: DetectionBufferViews | null = null
 
       console.log('[WorkerStore] Initialized with state:', store.get())
 
       return {
         store,
         getState: () => store.get(),
+
+        // SharedArrayBuffer management
+        setSharedBufferViews: (views: DetectionBufferViews | null) => {
+          sharedBufferViews = views
+          store.mutate((s) => {
+            s.sharedBuffer.enabled = views !== null
+          })
+          console.log(
+            '[WorkerStore] SharedArrayBuffer',
+            views ? 'enabled' : 'disabled',
+          )
+        },
+
+        getSharedBufferViews: () => sharedBufferViews,
+
+        isSharedBufferEnabled: () => store.get().sharedBuffer.enabled,
 
         // Config updates
         updateConfig: (

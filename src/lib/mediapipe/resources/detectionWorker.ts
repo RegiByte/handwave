@@ -9,7 +9,7 @@
  * - Initializes the worker braided system
  * - Sends video frames to worker via pushFrame
  * - Starts/stops the worker's detection loop
- * - Receives detection results via subscriptions
+ * - Receives detection results via subscriptions or SharedArrayBuffer
  * - Integrates with the Braided resource system
  */
 
@@ -17,6 +17,13 @@ import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
 import { detectionKeywords } from '../vocabulary/detectionKeywords'
 import type { DetectionResult } from '../vocabulary/detectionSchemas'
+import {
+  createDetectionBufferViews,
+  createDetectionSharedBuffer,
+  isSharedArrayBufferSupported,
+} from '../shared/detectionBuffer'
+import type { DetectionBufferViews } from '../shared/detectionBuffer'
+import { reconstructDetectionResults } from '../shared/detectionReconstruct'
 import { systemTasks } from './worker/kernel/systemTasks'
 import { createClientResource } from '@/lib/workerTasks/client'
 import { createSubscription } from '@/lib/state'
@@ -85,6 +92,10 @@ export const detectionWorkerResource = defineResource({
     // Track initialization state
     let initialized = false
 
+    // SharedArrayBuffer state
+    let sharedBufferViews: DetectionBufferViews | null = null
+    let sharedBufferEnabled = false
+
     /**
      * Initialize the worker braided system and load models
      */
@@ -101,7 +112,7 @@ export const detectionWorkerResource = defineResource({
           .dispatch(detectionKeywords.tasks.initializeWorker, {
             modelPaths: MODEL_PATHS,
             faceLandmarkerConfig: {
-              numFaces: 1,
+              numFaces: 2, // Support up to 2 faces
               minFaceDetectionConfidence: 0.5,
               minFacePresenceConfidence: 0.5,
               minTrackingConfidence: 0.5,
@@ -109,10 +120,10 @@ export const detectionWorkerResource = defineResource({
               outputFacialTransformationMatrixes: true,
             },
             gestureRecognizerConfig: {
-              numHands: 2,
+              numHands: 4, // Support up to 4 hands
               minHandDetectionConfidence: 0.5,
-              minHandPresenceConfidence: 0.5,
-              minTrackingConfidence: 0.5,
+              minHandPresenceConfidence: 0.6,
+              minTrackingConfidence: 0.6,
             },
             targetFPS: options?.targetFPS ?? 30,
           })
@@ -136,6 +147,92 @@ export const detectionWorkerResource = defineResource({
     }
 
     /**
+     * Initialize SharedArrayBuffer for zero-copy detection results
+     * Call this after initialize() to enable SharedArrayBuffer mode
+     * Returns true if SharedArrayBuffer was successfully attached
+     */
+    const initializeSharedBuffer = async (): Promise<boolean> => {
+      if (!initialized) {
+        console.warn(
+          '[Detection Worker Resource] Not initialized. Call initialize() first.',
+        )
+        return false
+      }
+
+      if (!isSharedArrayBufferSupported()) {
+        console.warn(
+          '[Detection Worker Resource] SharedArrayBuffer not supported in this environment',
+        )
+        return false
+      }
+
+      console.log(
+        '[Detection Worker Resource] Initializing SharedArrayBuffer...',
+      )
+
+      // Create the shared buffer
+      const { buffer, layout } = createDetectionSharedBuffer()
+
+      // Create views for main thread
+      sharedBufferViews = createDetectionBufferViews(buffer, layout)
+
+      // Send buffer to worker
+      await new Promise<void>((resolve, reject) => {
+        worker
+          .dispatch(detectionKeywords.tasks.attachSharedBuffer, {
+            buffer,
+            layout,
+          })
+          .onComplete((result) => {
+            if (result.attached) {
+              console.log(
+                `[Detection Worker Resource] ✅ SharedArrayBuffer attached (${result.bufferSize} bytes)`,
+              )
+              sharedBufferEnabled = true
+              resolve()
+            } else {
+              reject(new Error('Failed to attach SharedArrayBuffer'))
+            }
+          })
+          .onError((error) => {
+            reject(new Error(error))
+          })
+      })
+
+      return true
+    }
+
+    /**
+     * Read detection results directly from SharedArrayBuffer
+     * Returns null if SharedArrayBuffer is not enabled or no data available
+     * This is zero-copy - no message passing overhead!
+     */
+    const readDetectionResults = (): {
+      faceResult: ReturnType<typeof reconstructDetectionResults>['faceResult']
+      gestureResult: ReturnType<
+        typeof reconstructDetectionResults
+      >['gestureResult']
+      timestamp: number
+    } | null => {
+      if (!sharedBufferEnabled || !sharedBufferViews) {
+        return null
+      }
+
+      return reconstructDetectionResults(sharedBufferViews)
+    }
+
+    /**
+     * Check if SharedArrayBuffer mode is enabled
+     */
+    const isSharedBufferEnabled = (): boolean => sharedBufferEnabled
+
+    /**
+     * Get the SharedArrayBuffer views (for advanced usage)
+     */
+    const getSharedBufferViews = (): DetectionBufferViews | null =>
+      sharedBufferViews
+
+    /**
      * Push a video frame to the worker
      * Worker will use this frame for detection on next tick
      * Frame is transferred (zero-copy)
@@ -157,7 +254,9 @@ export const detectionWorkerResource = defineResource({
      */
     const startDetection = (): void => {
       if (!initialized) {
-        console.warn('[Detection Worker Resource] Not initialized. Call initialize() first.')
+        console.warn(
+          '[Detection Worker Resource] Not initialized. Call initialize() first.',
+        )
         return
       }
 
@@ -175,7 +274,10 @@ export const detectionWorkerResource = defineResource({
           console.log('[Detection Worker Resource] Detection loop started')
         })
         .onError((error) => {
-          console.error('[Detection Worker Resource] Failed to start detection:', error)
+          console.error(
+            '[Detection Worker Resource] Failed to start detection:',
+            error,
+          )
         })
     }
 
@@ -200,7 +302,11 @@ export const detectionWorkerResource = defineResource({
         | { type: 'pause' }
         | { type: 'resume' }
         | { type: 'setTargetFPS'; fps: number }
-        | { type: 'setDetectionSettings'; detectFace?: boolean; detectHands?: boolean },
+        | {
+            type: 'setDetectionSettings'
+            detectFace?: boolean
+            detectHands?: boolean
+          },
     ): void => {
       worker.dispatch(detectionKeywords.tasks.command, { command })
     }
@@ -216,6 +322,12 @@ export const detectionWorkerResource = defineResource({
       onDetectionResult: resultSubscription.subscribe,
       isInitialized: () => initialized,
 
+      // SharedArrayBuffer API (zero-copy detection results)
+      initializeSharedBuffer,
+      readDetectionResults,
+      isSharedBufferEnabled,
+      getSharedBufferViews,
+
       // Base worker API (for advanced usage)
       dispatch: worker.dispatch,
       getStatus: worker.getStatus,
@@ -224,6 +336,8 @@ export const detectionWorkerResource = defineResource({
       // Cleanup
       cleanup: () => {
         resultSubscription.clear()
+        sharedBufferViews = null
+        sharedBufferEnabled = false
       },
     }
   },

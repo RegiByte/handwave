@@ -20,6 +20,8 @@ import {
   gestureRecognizerConfigSchema,
   modelPathsSchema,
 } from '@/lib/mediapipe/vocabulary/detectionSchemas'
+import { createDetectionBufferViews } from '@/lib/mediapipe/shared/detectionBuffer'
+import type { DetectionBufferLayout } from '@/lib/mediapipe/shared/detectionBuffer'
 import { defineTask } from '@/lib/workerTasks/core'
 
 // ============================================================================
@@ -337,6 +339,68 @@ export const commandTask = defineTask({
   },
 })
 
+/**
+ * Attach SharedArrayBuffer for zero-copy detection results
+ * Main thread creates the buffer and sends it to worker
+ */
+export const attachSharedBufferTask = defineTask({
+  input: z.object({
+    buffer: z.instanceof(SharedArrayBuffer),
+    layout: z.object({
+      totalBytes: z.number(),
+      singleBufferSize: z.number(),
+      bufferIndexOffset: z.number(),
+      buffer0TimestampOffset: z.number(),
+      buffer0FaceCountOffset: z.number(),
+      buffer0HandCountOffset: z.number(),
+      buffer0FacesOffset: z.number(),
+      buffer0HandsOffset: z.number(),
+      buffer1TimestampOffset: z.number(),
+      buffer1FaceCountOffset: z.number(),
+      buffer1HandCountOffset: z.number(),
+      buffer1FacesOffset: z.number(),
+      buffer1HandsOffset: z.number(),
+      faceDataBytes: z.number(),
+      handDataBytes: z.number(),
+      faceLandmarksBytes: z.number(),
+      blendshapesBytes: z.number(),
+      transformationMatrixBytes: z.number(),
+      handLandmarksBytes: z.number(),
+      worldLandmarksBytes: z.number(),
+    }),
+  }),
+  output: z.object({
+    attached: z.boolean(),
+    bufferSize: z.number(),
+  }),
+  parseIO: false, // SharedArrayBuffer can't be parsed by Zod
+  execute: async (input) => {
+    if (!workerSystem) {
+      throw new Error('System not initialized - call initializeWorker first')
+    }
+
+    console.log('[SystemTasks] Attaching SharedArrayBuffer...', {
+      size: input.buffer.byteLength,
+    })
+
+    // Create views from the shared buffer
+    const views = createDetectionBufferViews(
+      input.buffer,
+      input.layout as DetectionBufferLayout,
+    )
+
+    // Store views in worker store
+    workerSystem.workerStore.setSharedBufferViews(views)
+
+    console.log('[SystemTasks] ✅ SharedArrayBuffer attached')
+
+    return Promise.resolve({
+      attached: true,
+      bufferSize: input.buffer.byteLength,
+    })
+  },
+})
+
 // ============================================================================
 // Task Registry
 // ============================================================================
@@ -347,6 +411,7 @@ export const systemTasks = {
   [detectionKeywords.tasks.stopDetection]: stopDetectionTask,
   [detectionKeywords.tasks.haltWorker]: haltWorkerTask,
   [detectionKeywords.tasks.pushFrame]: pushFrameTask,
+  [detectionKeywords.tasks.attachSharedBuffer]: attachSharedBufferTask,
   [detectionKeywords.tasks.command]: commandTask,
 } as const
 

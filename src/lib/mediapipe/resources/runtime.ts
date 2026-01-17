@@ -363,6 +363,10 @@ export const runtimeResource = defineResource({
       [mediapipeKeywords.commands.toggleHandCoordinates]: () => {
         console.log('[Runtime] Toggle hand coordinates')
       },
+      [mediapipeKeywords.commands.toggleVideoForeground]: () => {
+        console.log('[Runtime] Toggle video foreground')
+        loop.toggleRendering('videoForeground')
+      },
     }
 
     // ========================================================================
@@ -459,6 +463,10 @@ export const runtimeResource = defineResource({
           }),
         toggleDebugMode: () =>
           api.dispatch({ type: mediapipeKeywords.commands.toggleDebugMode }),
+        toggleVideoForeground: () =>
+          api.dispatch({
+            type: mediapipeKeywords.commands.toggleVideoForeground,
+          }),
       },
 
       // Cleanup

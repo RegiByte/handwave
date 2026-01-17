@@ -77,6 +77,10 @@ const toggleHandCoordinatesCommandSchema = z.object({
   type: z.literal(mediapipeKeywords.commands.toggleHandCoordinates),
 })
 
+const toggleVideoForegroundCommandSchema = z.object({
+  type: z.literal(mediapipeKeywords.commands.toggleVideoForeground),
+})
+
 // Union of all commands
 export const mediaPipeCommandSchema = z.discriminatedUnion('type', [
   startCommandSchema,
@@ -93,6 +97,7 @@ export const mediaPipeCommandSchema = z.discriminatedUnion('type', [
   toggleFaceLandmarkLabelsCommandSchema,
   toggleBlendshapesDisplayCommandSchema,
   toggleHandCoordinatesCommandSchema,
+  toggleVideoForegroundCommandSchema,
 ])
 
 export type MediaPipeCommand = z.infer<typeof mediaPipeCommandSchema>

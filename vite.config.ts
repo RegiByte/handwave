@@ -19,11 +19,26 @@ const config = defineConfig({
       spa: {
         enabled: true,
       },
+      
     }),
     viteReact(),
   ],
   worker: {
     format: 'iife', // Use classic worker format for MediaPipe compatibility
+  },
+  server: {
+    headers: {
+      // Required for SharedArrayBuffer support
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
+  preview: {
+    headers: {
+      // Required for SharedArrayBuffer support
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
   },
 })
 
