@@ -39,6 +39,7 @@ export type LoopState = {
   paused: boolean
   mirrored: boolean
   fps: number
+  workerFPS: number
   frameCount: number
   shouldRender: {
     videoForeground: boolean
@@ -123,9 +124,10 @@ export const loopResource = defineResource({
       paused: false,
       mirrored: true,
       fps: 0,
+      workerFPS: 0,
       frameCount: 0,
       shouldRender: {
-        videoForeground: true,
+        videoForeground: false,
       },
     })
 
@@ -162,80 +164,19 @@ export const loopResource = defineResource({
     }
 
     /**
-     * Convert detection result from simplified schema to MediaPipe format
-     */
-    const convertDetectionResult = (result: {
-      faceResult: any
-      gestureResult: any
-      timestamp: number
-    }) => {
-      if (result.faceResult) {
-        cachedFrameData.faceResult = {
-          faceLandmarks: [result.faceResult.landmarks],
-          faceBlendshapes: result.faceResult.blendshapes
-            ? [{ categories: result.faceResult.blendshapes }]
-            : undefined,
-          facialTransformationMatrixes: result.faceResult
-            .facialTransformationMatrixes
-            ? [{ data: result.faceResult.facialTransformationMatrixes }]
-            : undefined,
-        } as any
-      } else {
-        cachedFrameData.faceResult = null
-      }
-
-      if (result.gestureResult) {
-        cachedFrameData.gestureResult = {
-          landmarks: result.gestureResult.hands.map((h: any) => h.landmarks),
-          worldLandmarks: result.gestureResult.hands.map(
-            (h: any) => h.worldLandmarks || [],
-          ),
-          handedness: result.gestureResult.hands.map((h: any) => [
-            { categoryName: h.handedness, score: 1.0 },
-          ]),
-          gestures: [result.gestureResult.gestures],
-        } as any
-      } else {
-        cachedFrameData.gestureResult = null
-      }
-
-      frame$.notify({
-        timestamp: result.timestamp,
-        video: camera.video,
-        faceResult: result.faceResult,
-        gestureResult: result.gestureResult,
-      })
-    }
-
-    /**
-     * Initialize worker detection
+     * Initialize worker detection with SharedArrayBuffer
      */
     const initializeWorkerDetection = async () => {
       console.log('[Loop] Initializing worker detection...')
 
-      // Initialize worker
+      // Initialize worker (includes SharedArrayBuffer setup)
       await detectionWorker.initialize({
         targetFPS: 30,
         detectFace: true,
         detectHands: true,
       })
 
-      // Try to initialize SharedArrayBuffer for zero-copy results
-      const sharedBufferEnabled = await detectionWorker.initializeSharedBuffer()
-
-      if (sharedBufferEnabled) {
-        console.log('[Loop] ✅ Using SharedArrayBuffer for zero-copy results')
-      } else {
-        console.log('[Loop] Using message passing for results (fallback)')
-        // Subscribe to detection results (fallback when SharedArrayBuffer not available)
-        detectionWorker.onDetectionResult((result) => {
-          convertDetectionResult({
-            faceResult: result.faceResult,
-            gestureResult: result.gestureResult,
-            timestamp: result.timestamp,
-          })
-        })
-      }
+      console.log('[Loop] ✅ Using SharedArrayBuffer for zero-copy results')
 
       // Start detection loop
       detectionWorker.startDetection()
@@ -434,6 +375,14 @@ export const loopResource = defineResource({
           // Update cached frame data with results from SharedArrayBuffer
           cachedFrameData.faceResult = sharedResults.faceResult
           cachedFrameData.gestureResult = sharedResults.gestureResult
+
+          // Update worker FPS in state
+          const currentWorkerFPS = Math.round(sharedResults.workerFPS)
+          if (currentWorkerFPS !== state.get().workerFPS) {
+            state.mutate((s) => {
+              s.workerFPS = currentWorkerFPS
+            })
+          }
         }
       }
 

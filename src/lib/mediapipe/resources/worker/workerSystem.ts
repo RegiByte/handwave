@@ -6,21 +6,24 @@
  *
  * Dependency Graph:
  *
+ *   frameRater (no deps) - Frame rate tracking
+ *       ↓
  *   workerStore (no deps) - Worker-local state
  *       ↓
  *   workerVision ← workerStore - MediaPipe models
  *       ↓
  *   workerDetectors ← workerStore, workerVision - Detection logic
  *       ↓
- *   workerUpdateLoop ← workerStore, workerDetectors - Independent loop
+ *   workerUpdateLoop ← workerStore, workerDetectors, frameRater - Independent loop
  *
  * Philosophy: Worker owns its own braided system, independent of main thread.
- * Communication happens via message passing (commands/events/results).
+ * Communication happens via SharedArrayBuffer (zero-copy detection results).
  */
 
 import type { StartedSystem } from 'braided'
-import {  createWorkerStore } from './workerStore'
-import type {WorkerStoreState} from './workerStore';
+import { frameRater } from '../frameRater'
+import { createWorkerStore } from './workerStore'
+import type { WorkerStoreState } from './workerStore'
 import { workerVision } from './workerVision'
 import { workerDetectors } from './workerDetectors'
 import { workerUpdateLoop } from './workerUpdateLoop'
@@ -33,6 +36,7 @@ export const createWorkerSystemConfig = (
   initialState?: Partial<WorkerStoreState>,
 ) => {
   return {
+    frameRater,
     workerStore: createWorkerStore(initialState),
     workerVision,
     workerDetectors,

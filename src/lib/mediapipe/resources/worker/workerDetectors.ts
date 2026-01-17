@@ -3,7 +3,7 @@
  *
  * Runs MediaPipe detection on video frames.
  * Worker owns its internal canvas - main thread sends ImageBitmap frames.
- * Writes results to SharedArrayBuffer (zero-copy) or message passing (fallback).
+ * Writes results to SharedArrayBuffer (zero-copy).
  *
  * Philosophy: Pure detection logic. No loop management.
  * Called by workerUpdateLoop each tick.
@@ -15,15 +15,9 @@ import type {
 } from '@mediapipe/tasks-vision'
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
-import type {
-  DetectionResult,
-  FaceResult,
-  GestureResult,
-} from '../../vocabulary/detectionSchemas'
 import { writeDetectionResults } from '../../shared/detectionWrite'
 import type { WorkerStoreResource } from './workerStore'
 import type { WorkerVisionResource } from './workerVision'
-import { createSubscription } from '@/lib/state'
 
 // ============================================================================
 // Types
@@ -32,69 +26,7 @@ import { createSubscription } from '@/lib/state'
 export type DetectionInput = {
   source: ImageBitmap | OffscreenCanvas
   timestamp: number
-}
-
-export type DetectionOutput = DetectionResult
-
-// ============================================================================
-// Result Converters (Pure Functions)
-// ============================================================================
-
-/**
- * Convert MediaPipe FaceLandmarkerResult to our schema
- */
-const convertFaceResult = (result: FaceLandmarkerResult): FaceResult | null => {
-  if (result.faceLandmarks.length === 0) return null
-
-  return {
-    landmarks: result.faceLandmarks[0].map((lm) => ({
-      x: lm.x,
-      y: lm.y,
-      z: lm.z,
-      visibility: lm.visibility,
-    })),
-    blendshapes: result.faceBlendshapes?.[0]?.categories.map((cat) => ({
-      categoryName: cat.categoryName,
-      score: cat.score,
-      index: cat.index,
-      displayName: cat.displayName,
-    })),
-    facialTransformationMatrixes: result.facialTransformationMatrixes?.[0]?.data
-      ? Array.from(result.facialTransformationMatrixes[0].data)
-      : undefined,
-  }
-}
-
-/**
- * Convert MediaPipe GestureRecognizerResult to our schema
- */
-const convertGestureResult = (
-  result: GestureRecognizerResult,
-): GestureResult | null => {
-  if (result.landmarks.length === 0) return null
-
-  return {
-    hands: result.landmarks.map((landmarks, i) => ({
-      handedness: result.handedness[i]?.[0]?.categoryName || 'Unknown',
-      landmarks: landmarks.map((lm) => ({
-        x: lm.x,
-        y: lm.y,
-        z: lm.z,
-        visibility: lm.visibility,
-      })),
-      worldLandmarks: result.worldLandmarks?.[i]?.map((lm) => ({
-        x: lm.x,
-        y: lm.y,
-        z: lm.z,
-      })),
-    })),
-    gestures: result.gestures.flat().map((gesture) => ({
-      categoryName: gesture.categoryName,
-      score: gesture.score,
-      index: gesture.index,
-      displayName: gesture.displayName,
-    })),
-  }
+  workerFPS?: number
 }
 
 // ============================================================================
@@ -111,12 +43,6 @@ export const workerDetectors = defineResource({
     workerVision: WorkerVisionResource
   }) => {
     console.log('[WorkerDetectors] Starting...')
-
-    // Subscription for detection results
-    const resultSubscription = createSubscription<DetectionOutput>()
-
-    // Latest result cache (for SharedArrayBuffer future)
-    let latestResult: DetectionOutput | null = null
 
     // Latest frame from main thread (updated via pushFrame)
     let latestFrame: ImageBitmap | null = null
@@ -184,25 +110,18 @@ export const workerDetectors = defineResource({
 
     /**
      * Run detection on a single frame
-     * Returns detection result
-     *
-     * When SharedArrayBuffer is enabled, writes raw MediaPipe results to buffer.
-     * Always returns converted result for message passing (can be used as fallback).
+     * Writes raw MediaPipe results directly to SharedArrayBuffer (zero-copy)
      */
-    const detect = (input: DetectionInput): DetectionOutput => {
+    const detect = (input: DetectionInput): void => {
       const start = performance.now()
       const { detectFace, detectHands } = workerStore.getState().detection
 
       // Get strictly increasing timestamp for MediaPipe
       const mediaPipeTimestamp = getMediaPipeTimestamp(input.timestamp)
 
-      // Raw MediaPipe results (for SharedArrayBuffer)
+      // Raw MediaPipe results
       let rawFaceResult: FaceLandmarkerResult | null = null
       let rawGestureResult: GestureRecognizerResult | null = null
-
-      // Converted results (for message passing)
-      let faceResult: FaceResult | null = null
-      let gestureResult: GestureResult | null = null
 
       try {
         const source = input.source
@@ -213,7 +132,6 @@ export const workerDetectors = defineResource({
             source,
             mediaPipeTimestamp,
           )
-          faceResult = convertFaceResult(rawFaceResult)
         }
 
         // Run hand/gesture detection
@@ -222,10 +140,9 @@ export const workerDetectors = defineResource({
             source,
             mediaPipeTimestamp,
           )
-          gestureResult = convertGestureResult(rawGestureResult)
         }
 
-        // Write to SharedArrayBuffer if enabled
+        // Write to SharedArrayBuffer (zero-copy!)
         const sharedBufferViews = workerStore.getSharedBufferViews()
         if (sharedBufferViews) {
           writeDetectionResults(
@@ -233,6 +150,7 @@ export const workerDetectors = defineResource({
             rawFaceResult,
             rawGestureResult,
             input.timestamp,
+            input.workerFPS, // Pass FPS from workerUpdateLoop
           )
         }
       } catch (error) {
@@ -240,30 +158,17 @@ export const workerDetectors = defineResource({
       }
 
       const processingTimeMs = performance.now() - start
-
-      const output: DetectionOutput = {
-        faceResult,
-        gestureResult,
-        processingTimeMs,
-        timestamp: input.timestamp,
-      }
-
-      // Update cache and notify (message passing path)
-      latestResult = output
       workerStore.setLastDetectionTime(processingTimeMs)
       workerStore.incrementFrameCount()
-      resultSubscription.notify(output)
-
-      return output
     }
 
     /**
      * Detect from the latest pushed frame
      * Used by workerUpdateLoop each tick
      */
-    const detectFromLatestFrame = (): DetectionOutput | null => {
+    const detectFromLatestFrame = (workerFPS?: number): void => {
       if (!latestFrame) {
-        return null
+        return
       }
 
       // Draw frame to internal canvas for MediaPipe
@@ -273,7 +178,7 @@ export const workerDetectors = defineResource({
 
       // Run detection on the internal canvas (or directly on bitmap)
       const source = internalCanvas || latestFrame
-      return detect({ source, timestamp: latestFrameTimestamp })
+      detect({ source, timestamp: latestFrameTimestamp, workerFPS })
     }
 
     /**
@@ -291,17 +196,12 @@ export const workerDetectors = defineResource({
       pushFrame,
       initializeCanvas,
 
-      // Result access
-      getLatestResult: () => latestResult,
-      onResult: resultSubscription.subscribe,
-
       // Cleanup
       cleanup: () => {
         if (latestFrame) {
           latestFrame.close()
           latestFrame = null
         }
-        resultSubscription.clear()
       },
     }
   },

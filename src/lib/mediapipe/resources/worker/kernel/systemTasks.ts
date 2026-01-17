@@ -15,7 +15,6 @@ import type { WorkerSystem } from '@/lib/mediapipe/resources/worker/workerSystem
 import { createWorkerSystemConfig } from '@/lib/mediapipe/resources/worker/workerSystem'
 import { detectionKeywords } from '@/lib/mediapipe/vocabulary/detectionKeywords'
 import {
-  detectionResultSchema,
   faceLandmarkerConfigSchema,
   gestureRecognizerConfigSchema,
   modelPathsSchema,
@@ -59,10 +58,6 @@ const eventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal(detectionKeywords.events.stopped) }),
   z.object({ type: z.literal(detectionKeywords.events.paused) }),
   z.object({ type: z.literal(detectionKeywords.events.resumed) }),
-  z.object({
-    type: z.literal(detectionKeywords.events.frame),
-    result: detectionResultSchema,
-  }),
   z.object({
     type: z.literal(detectionKeywords.events.error),
     error: z.string(),
@@ -173,6 +168,7 @@ export const startDetectionTask = defineTask({
     const loop = workerSystem.workerUpdateLoop
 
     // Subscribe to loop events and forward as progress
+    // Note: Frame results flow via SharedArrayBuffer, not events
     loop.onEvent((event) => {
       switch (event.type) {
         case 'started':
@@ -197,15 +193,6 @@ export const startDetectionTask = defineTask({
           reportProgress({
             type: 'detection',
             event: { type: detectionKeywords.events.resumed },
-          })
-          break
-        case 'frame':
-          reportProgress({
-            type: 'detection',
-            event: {
-              type: detectionKeywords.events.frame,
-              result: event.result,
-            },
           })
           break
         case 'error':
@@ -325,7 +312,11 @@ export const commandTask = defineTask({
         workerSystem.workerUpdateLoop.resume()
         break
       case detectionKeywords.commands.setTargetFPS:
-        workerSystem.workerUpdateLoop.setTargetFPS(command.fps)
+        // Worker now runs at maximum speed - targetFPS is informational only
+        workerSystem.workerStore.setDetectionSettings({ targetFPS: command.fps })
+        console.log(
+          `[SystemTasks] Note: Worker runs at maximum speed. targetFPS (${command.fps}) is for reference only.`,
+        )
         break
       case detectionKeywords.commands.setDetectionSettings:
         workerSystem.workerStore.setDetectionSettings({
@@ -353,11 +344,13 @@ export const attachSharedBufferTask = defineTask({
       buffer0TimestampOffset: z.number(),
       buffer0FaceCountOffset: z.number(),
       buffer0HandCountOffset: z.number(),
+      buffer0WorkerFPSOffset: z.number(),
       buffer0FacesOffset: z.number(),
       buffer0HandsOffset: z.number(),
       buffer1TimestampOffset: z.number(),
       buffer1FaceCountOffset: z.number(),
       buffer1HandCountOffset: z.number(),
+      buffer1WorkerFPSOffset: z.number(),
       buffer1FacesOffset: z.number(),
       buffer1HandsOffset: z.number(),
       faceDataBytes: z.number(),

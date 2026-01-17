@@ -37,6 +37,8 @@ export {
   setBufferFaceCount,
   getBufferHandCount,
   setBufferHandCount,
+  getBufferWorkerFPS,
+  setBufferWorkerFPS,
   // View accessors
   getFaceLandmarkViews,
   getBlendshapeViews,

@@ -28,6 +28,7 @@ import {
   getBufferFaceCount,
   getBufferHandCount,
   getBufferTimestamp,
+  getBufferWorkerFPS,
   getFaceLandmarkViews,
   getHandLandmarkViews,
   getHandMetadataViews,
@@ -241,8 +242,8 @@ export function reconstructFaceLandmarkerResult(
     facialTransformationMatrixes.push({
       rows: 4,
       columns: 4,
-      data: Array.from(transformViews[i]),
-    })
+      data: transformViews[i],
+    } as unknown as Matrix)
   }
 
   // Cast through unknown to satisfy TypeScript - MediaPipe types are strict
@@ -361,6 +362,7 @@ export function reconstructDetectionResults(views: DetectionBufferViews): {
   faceResult: FaceLandmarkerResult | null
   gestureResult: GestureRecognizerResult | null
   timestamp: number
+  workerFPS: number
 } {
   const activeIdx = getActiveBufferIndex(views)
 
@@ -368,6 +370,7 @@ export function reconstructDetectionResults(views: DetectionBufferViews): {
     faceResult: reconstructFaceLandmarkerResult(views),
     gestureResult: reconstructGestureRecognizerResult(views),
     timestamp: getBufferTimestamp(views, activeIdx),
+    workerFPS: getBufferWorkerFPS(views, activeIdx),
   }
 }
 

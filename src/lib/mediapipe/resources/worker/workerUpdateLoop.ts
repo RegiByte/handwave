@@ -2,15 +2,16 @@
  * Worker Update Loop Resource
  *
  * Independent update loop running in the worker thread.
- * Drives detection at its own optimal rate, decoupled from main thread.
+ * Runs detection as fast as possible with proper frame rate tracking.
  *
  * Philosophy: Worker owns its timeline. Main thread renders, worker detects.
- * Results flow back via message passing (later: SharedArrayBuffer).
+ * Results flow via SharedArrayBuffer (zero-copy).
+ * No artificial throttling - let it run at maximum speed!
  */
 
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
-import type { DetectionResult } from '../../vocabulary/detectionSchemas'
+import type { FrameRaterAPI } from '../frameRater'
 import type { WorkerDetectorsResource } from './workerDetectors'
 import type { WorkerStoreResource } from './workerStore'
 import { createSubscription } from '@/lib/state'
@@ -24,7 +25,6 @@ export type LoopEvent =
   | { type: 'stopped' }
   | { type: 'paused' }
   | { type: 'resumed' }
-  | { type: 'frame'; result: DetectionResult }
   | { type: 'error'; error: string }
 
 // ============================================================================
@@ -32,27 +32,36 @@ export type LoopEvent =
 // ============================================================================
 
 export const workerUpdateLoop = defineResource({
-  dependencies: ['workerStore', 'workerDetectors'],
+  dependencies: ['workerStore', 'workerDetectors', 'frameRater'],
   start: ({
     workerStore,
     workerDetectors,
+    frameRater,
   }: {
     workerStore: WorkerStoreResource
     workerDetectors: WorkerDetectorsResource
+    frameRater: FrameRaterAPI
   }) => {
     console.log('[WorkerUpdateLoop] Starting...')
 
     // Event subscription for loop state changes
     const eventSubscription = createSubscription<LoopEvent>()
 
+    // Create variable timestep executor - runs as fast as possible!
+    const detectionRater = frameRater.variable('workerDetection', {
+      targetFPS: 60, // Target for display, but we'll run faster if we can
+      smoothingWindow: 10,
+      maxDeltaMs: 100, // Cap huge jumps
+    })
+
     // Loop state
     let rafId: number | null = null
     let lastTickTime = 0
-    let targetIntervalMs = 1000 / 30 // Default 30 FPS
 
     /**
      * Main update tick
      * Called on each animation frame when running
+     * Runs as fast as possible - no artificial throttling!
      */
     const tick = (timestamp: number) => {
       const state = workerStore.getState()
@@ -69,21 +78,22 @@ export const workerUpdateLoop = defineResource({
         return
       }
 
-      // Throttle to target FPS
-      const elapsed = timestamp - lastTickTime
-      if (elapsed < targetIntervalMs) {
-        rafId = requestAnimationFrame(tick)
-        return
-      }
+      // Calculate delta time
+      const deltaMs = timestamp - lastTickTime
       lastTickTime = timestamp
 
-      // Run detection from latest frame
+      // Run detection from latest frame (writes to SharedArrayBuffer)
+      // No throttling - run as fast as we can!
       if (workerDetectors.hasFrame()) {
         try {
-          const result = workerDetectors.detectFromLatestFrame()
-          if (result) {
-            eventSubscription.notify({ type: 'frame', result })
-          }
+          // Get current FPS before detection
+          const currentFPS = detectionRater.getFPS()
+          
+          // Run detection and pass FPS to be written to SharedArrayBuffer
+          workerDetectors.detectFromLatestFrame(currentFPS)
+          
+          // Record frame for FPS tracking
+          detectionRater.recordFrame(deltaMs)
         } catch (error) {
           console.error('[WorkerUpdateLoop] Detection error:', error)
           eventSubscription.notify({
@@ -99,6 +109,7 @@ export const workerUpdateLoop = defineResource({
 
     /**
      * Start the update loop
+     * Runs at maximum speed - no throttling!
      */
     const start = () => {
       const state = workerStore.getState()
@@ -107,18 +118,12 @@ export const workerUpdateLoop = defineResource({
         return
       }
 
-      // Update target FPS from settings
-      targetIntervalMs = 1000 / state.detection.targetFPS
-
       workerStore.setRunning(true)
       lastTickTime = performance.now()
+      detectionRater.reset()
       rafId = requestAnimationFrame(tick)
 
-      console.log(
-        '[WorkerUpdateLoop] Started at',
-        state.detection.targetFPS,
-        'FPS',
-      )
+      console.log('[WorkerUpdateLoop] Started (running at maximum speed)')
       eventSubscription.notify({ type: 'started' })
     }
 
@@ -156,13 +161,14 @@ export const workerUpdateLoop = defineResource({
     }
 
     /**
-     * Set target FPS
+     * Get current detection FPS
      */
-    const setTargetFPS = (fps: number) => {
-      targetIntervalMs = 1000 / fps
-      workerStore.setDetectionSettings({ targetFPS: fps })
-      console.log('[WorkerUpdateLoop] Target FPS set to', fps)
-    }
+    const getDetectionFPS = () => detectionRater.getFPS()
+
+    /**
+     * Get detection metrics
+     */
+    const getMetrics = () => detectionRater.getMetrics()
 
     return {
       // Loop control
@@ -173,8 +179,9 @@ export const workerUpdateLoop = defineResource({
       isRunning: () => workerStore.getState().runtime.running,
       isPaused: () => workerStore.getState().runtime.paused,
 
-      // Configuration
-      setTargetFPS,
+      // Metrics
+      getDetectionFPS,
+      getMetrics,
 
       // Events
       onEvent: eventSubscription.subscribe,

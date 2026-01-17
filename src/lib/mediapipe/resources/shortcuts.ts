@@ -119,7 +119,7 @@ export const shortcutsResource = defineResource({
     // ========================================================================
     // Throttled Commands (prevent spam)
     // ========================================================================
-
+    let schedulePauseTimeout: NodeJS.Timeout | null = null
     const throttledCommands = {
       togglePause: throttle(commands.togglePause, { wait: 100 }),
       toggleMirror: throttle(commands.toggleMirror, { wait: 100 }),
@@ -127,6 +127,14 @@ export const shortcutsResource = defineResource({
       toggleVideoForeground: throttle(commands.toggleVideoForeground, {
         wait: 100,
       }),
+      schedulePause: throttle(() => {
+        if (schedulePauseTimeout) {
+          clearTimeout(schedulePauseTimeout)
+        }
+        schedulePauseTimeout = setTimeout(() => {
+          commands.togglePause()
+        }, 3000)
+      }, { wait: 100 }),
     }
 
     // ========================================================================
@@ -134,6 +142,10 @@ export const shortcutsResource = defineResource({
     // ========================================================================
 
     const shortcuts: Array<Shortcut> = [
+      {
+        keymaps: ['shift+space'],
+        handler: () => throttledCommands.schedulePause(),
+      },
       {
         keymaps: ['space'],
         handler: () => throttledCommands.togglePause(),
@@ -184,6 +196,7 @@ export const shortcutsResource = defineResource({
           )
         })
       })
+      console.log('matchedShortcut', matchedShortcut)
 
       if (matchedShortcut) {
         event.preventDefault()

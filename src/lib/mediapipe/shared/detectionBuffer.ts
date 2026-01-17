@@ -43,7 +43,7 @@ export const WORLD_LANDMARK_COMPONENTS = 3
 // ============================================================================
 
 /** Size of metadata section */
-const METADATA_SIZE = 16 // bufferIndex(4) + timestamp(8) + faceCount(1) + handCount(1) + padding(2)
+const METADATA_SIZE = 16 // timestamp(8) + faceCount(1) + handCount(1) + workerFPS(4) + padding(2)
 
 /** Size of face landmarks: 478 landmarks × 4 components × 4 bytes */
 const FACE_LANDMARKS_BYTES = FACE_LANDMARKS_COUNT * LANDMARK_COMPONENTS * 4
@@ -107,6 +107,9 @@ export type DetectionBufferLayout = {
   /** Offset to buffer 0 hand count (Uint8) */
   buffer0HandCountOffset: number
 
+  /** Offset to buffer 0 worker FPS (Float32) */
+  buffer0WorkerFPSOffset: number
+
   /** Offset to buffer 0 face data start */
   buffer0FacesOffset: number
 
@@ -123,6 +126,9 @@ export type DetectionBufferLayout = {
 
   /** Offset to buffer 1 hand count (Uint8) */
   buffer1HandCountOffset: number
+
+  /** Offset to buffer 1 worker FPS (Float32) */
+  buffer1WorkerFPSOffset: number
 
   /** Offset to buffer 1 face data start */
   buffer1FacesOffset: number
@@ -173,7 +179,8 @@ export function calculateDetectionBufferLayout(): DetectionBufferLayout {
   const buffer0TimestampOffset = buffer0Start
   const buffer0FaceCountOffset = buffer0Start + 8
   const buffer0HandCountOffset = buffer0Start + 9
-  // Padding: bytes 10-15 (to align face data to 4 bytes)
+  const buffer0WorkerFPSOffset = buffer0Start + 10 // Float32 at byte 10
+  // Padding: bytes 14-15 (to align face data to 4 bytes)
 
   // Buffer 0 face data starts at offset 16 from buffer start
   const buffer0FacesOffset = buffer0Start + 16
@@ -188,6 +195,7 @@ export function calculateDetectionBufferLayout(): DetectionBufferLayout {
   const buffer1TimestampOffset = buffer1Start
   const buffer1FaceCountOffset = buffer1Start + 8
   const buffer1HandCountOffset = buffer1Start + 9
+  const buffer1WorkerFPSOffset = buffer1Start + 10 // Float32 at byte 10
 
   // Buffer 1 face data
   const buffer1FacesOffset = buffer1Start + 16
@@ -207,12 +215,14 @@ export function calculateDetectionBufferLayout(): DetectionBufferLayout {
     buffer0TimestampOffset,
     buffer0FaceCountOffset,
     buffer0HandCountOffset,
+    buffer0WorkerFPSOffset,
     buffer0FacesOffset,
     buffer0HandsOffset,
 
     buffer1TimestampOffset,
     buffer1FaceCountOffset,
     buffer1HandCountOffset,
+    buffer1WorkerFPSOffset,
     buffer1FacesOffset,
     buffer1HandsOffset,
 
@@ -553,6 +563,35 @@ export function setBufferHandCount(
       ? views.layout.buffer0HandCountOffset
       : views.layout.buffer1HandCountOffset
   views.dataView.setUint8(offset, Math.min(count, MAX_HANDS))
+}
+
+/**
+ * Get worker FPS from a buffer.
+ */
+export function getBufferWorkerFPS(
+  views: DetectionBufferViews,
+  bufferIdx: 0 | 1
+): number {
+  const offset =
+    bufferIdx === 0
+      ? views.layout.buffer0WorkerFPSOffset
+      : views.layout.buffer1WorkerFPSOffset
+  return views.dataView.getFloat32(offset, true)
+}
+
+/**
+ * Set worker FPS in a buffer.
+ */
+export function setBufferWorkerFPS(
+  views: DetectionBufferViews,
+  bufferIdx: 0 | 1,
+  fps: number
+): void {
+  const offset =
+    bufferIdx === 0
+      ? views.layout.buffer0WorkerFPSOffset
+      : views.layout.buffer1WorkerFPSOffset
+  views.dataView.setFloat32(offset, fps, true)
 }
 
 // ============================================================================

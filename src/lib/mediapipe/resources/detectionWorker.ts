@@ -1,32 +1,34 @@
 /**
  * Detection Worker Client Resource
  *
- * Braided resource that manages the detection worker lifecycle.
- * Worker-driven architecture: worker runs its own detection loop,
- * main thread sends video frames as ImageBitmap.
+ * Worker-driven architecture with zero-copy detection results via SharedArrayBuffer.
+ * Worker runs its own detection loop, main thread sends video frames as ImageBitmap.
+ *
+ * REQUIREMENTS:
+ * - SharedArrayBuffer support (all modern browsers)
+ * - crossOriginIsolated context (COOP/COEP headers)
+ * - Vite automatically configures headers in dev/preview modes
  *
  * This resource:
  * - Initializes the worker braided system
- * - Sends video frames to worker via pushFrame
+ * - Sends video frames to worker via pushFrame (zero-copy transfer)
  * - Starts/stops the worker's detection loop
- * - Receives detection results via subscriptions or SharedArrayBuffer
+ * - Provides zero-copy detection results via SharedArrayBuffer
  * - Integrates with the Braided resource system
  */
 
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
 import { detectionKeywords } from '../vocabulary/detectionKeywords'
-import type { DetectionResult } from '../vocabulary/detectionSchemas'
 import {
   createDetectionBufferViews,
   createDetectionSharedBuffer,
-  isSharedArrayBufferSupported,
+  getSharedArrayBufferStatus,
 } from '../shared/detectionBuffer'
 import type { DetectionBufferViews } from '../shared/detectionBuffer'
 import { reconstructDetectionResults } from '../shared/detectionReconstruct'
 import { systemTasks } from './worker/kernel/systemTasks'
 import { createClientResource } from '@/lib/workerTasks/client'
-import { createSubscription } from '@/lib/state'
 
 // Model URLs (CDN-hosted MediaPipe models)
 const MODEL_PATHS = {
@@ -59,7 +61,7 @@ const workerClient = createClientResource(
  *   worker.startDetection()
  *   // In render loop:
  *   worker.pushFrame(imageBitmap, timestamp)
- *   worker.onDetectionResult((result) => { ... })
+ *   const results = worker.readDetectionResults() // Zero-copy!
  */
 export const detectionWorkerResource = defineResource({
   dependencies: [],
@@ -86,9 +88,6 @@ export const detectionWorkerResource = defineResource({
 
     console.log('[Detection Worker Resource] ✅ Worker ready')
 
-    // Subscription for detection results
-    const resultSubscription = createSubscription<DetectionResult>()
-
     // Track initialization state
     let initialized = false
 
@@ -98,6 +97,7 @@ export const detectionWorkerResource = defineResource({
 
     /**
      * Initialize the worker braided system and load models
+     * Requires SharedArrayBuffer support - will throw if not available
      */
     const initialize = async (options?: {
       targetFPS?: number
@@ -105,6 +105,29 @@ export const detectionWorkerResource = defineResource({
       detectHands?: boolean
     }): Promise<void> => {
       console.log('[Detection Worker Resource] Initializing...')
+
+      // Check SharedArrayBuffer support FIRST
+      const sabStatus = getSharedArrayBufferStatus()
+      if (!sabStatus.supported) {
+        const errorMessage =
+          `SharedArrayBuffer is required but not available.\n\n` +
+          `Reason: ${sabStatus.reason}\n` +
+          `crossOriginIsolated: ${sabStatus.crossOriginIsolated}\n\n` +
+          `To fix this:\n` +
+          `1. Ensure your server sends these headers:\n` +
+          `   Cross-Origin-Opener-Policy: same-origin\n` +
+          `   Cross-Origin-Embedder-Policy: require-corp\n` +
+          `2. Restart your dev server\n` +
+          `3. Hard refresh your browser (Cmd+Shift+R or Ctrl+Shift+R)`
+
+        console.error('[Detection Worker Resource]', errorMessage)
+        throw new Error(errorMessage)
+      }
+
+      console.log(
+        '[Detection Worker Resource] ✅ SharedArrayBuffer available',
+        { crossOriginIsolated: sabStatus.crossOriginIsolated },
+      )
 
       // Initialize the worker braided system
       await new Promise<void>((resolve, reject) => {
@@ -122,8 +145,8 @@ export const detectionWorkerResource = defineResource({
             gestureRecognizerConfig: {
               numHands: 4, // Support up to 4 hands
               minHandDetectionConfidence: 0.5,
-              minHandPresenceConfidence: 0.6,
-              minTrackingConfidence: 0.6,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
             },
             targetFPS: options?.targetFPS ?? 30,
           })
@@ -142,30 +165,7 @@ export const detectionWorkerResource = defineResource({
           })
       })
 
-      initialized = true
-      console.log('[Detection Worker Resource] ✅ Ready for detection')
-    }
-
-    /**
-     * Initialize SharedArrayBuffer for zero-copy detection results
-     * Call this after initialize() to enable SharedArrayBuffer mode
-     * Returns true if SharedArrayBuffer was successfully attached
-     */
-    const initializeSharedBuffer = async (): Promise<boolean> => {
-      if (!initialized) {
-        console.warn(
-          '[Detection Worker Resource] Not initialized. Call initialize() first.',
-        )
-        return false
-      }
-
-      if (!isSharedArrayBufferSupported()) {
-        console.warn(
-          '[Detection Worker Resource] SharedArrayBuffer not supported in this environment',
-        )
-        return false
-      }
-
+      // Initialize SharedArrayBuffer (mandatory for zero-copy detection)
       console.log(
         '[Detection Worker Resource] Initializing SharedArrayBuffer...',
       )
@@ -199,7 +199,8 @@ export const detectionWorkerResource = defineResource({
           })
       })
 
-      return true
+      initialized = true
+      console.log('[Detection Worker Resource] ✅ Ready for detection')
     }
 
     /**
@@ -213,6 +214,7 @@ export const detectionWorkerResource = defineResource({
         typeof reconstructDetectionResults
       >['gestureResult']
       timestamp: number
+      workerFPS: number
     } | null => {
       if (!sharedBufferEnabled || !sharedBufferViews) {
         return null
@@ -251,6 +253,7 @@ export const detectionWorkerResource = defineResource({
 
     /**
      * Start the detection loop
+     * Results are available via readDetectionResults() (zero-copy SharedArrayBuffer)
      */
     const startDetection = (): void => {
       if (!initialized) {
@@ -262,14 +265,6 @@ export const detectionWorkerResource = defineResource({
 
       worker
         .dispatch(detectionKeywords.tasks.startDetection, {})
-        .onProgress((progress) => {
-          if (progress.type === 'detection') {
-            const event = progress.event
-            if (event.type === detectionKeywords.events.frame) {
-              resultSubscription.notify(event.result)
-            }
-          }
-        })
         .onComplete(() => {
           console.log('[Detection Worker Resource] Detection loop started')
         })
@@ -319,11 +314,9 @@ export const detectionWorkerResource = defineResource({
       startDetection,
       stopDetection,
       sendCommand,
-      onDetectionResult: resultSubscription.subscribe,
       isInitialized: () => initialized,
 
       // SharedArrayBuffer API (zero-copy detection results)
-      initializeSharedBuffer,
       readDetectionResults,
       isSharedBufferEnabled,
       getSharedBufferViews,
@@ -335,7 +328,6 @@ export const detectionWorkerResource = defineResource({
 
       // Cleanup
       cleanup: () => {
-        resultSubscription.clear()
         sharedBufferViews = null
         sharedBufferEnabled = false
       },

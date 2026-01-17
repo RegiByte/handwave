@@ -33,6 +33,7 @@ import {
   setBufferFaceCount,
   setBufferHandCount,
   setBufferTimestamp,
+  setBufferWorkerFPS,
   swapDetectionBuffers,
 } from './detectionBuffer'
 import type { DetectionBufferViews } from './detectionBuffer'
@@ -313,7 +314,7 @@ export function writeGestureResult(
 
 /**
  * Write both face and gesture results to the inactive buffer,
- * set the timestamp, and swap buffers to make data visible.
+ * set the timestamp, worker FPS, and swap buffers to make data visible.
  *
  * This is the main function the worker should call after detection.
  */
@@ -322,11 +323,17 @@ export function writeDetectionResults(
   faceResult: FaceLandmarkerResult | null,
   gestureResult: GestureRecognizerResult | null,
   timestamp: number,
+  workerFPS?: number,
 ): void {
   const bufferIdx = getInactiveBufferIndex(views)
 
   // Write timestamp
   setBufferTimestamp(views, bufferIdx, timestamp)
+
+  // Write worker FPS if provided
+  if (workerFPS !== undefined) {
+    setBufferWorkerFPS(views, bufferIdx, workerFPS)
+  }
 
   // Write face result
   writeFaceResult(views, faceResult)
