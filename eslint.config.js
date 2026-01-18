@@ -1,9 +1,13 @@
 //  @ts-check
 
 import { tanstackConfig } from '@tanstack/eslint-config'
+import { defineConfig, globalIgnores } from 'eslint/config'
+import noRelativeImportPaths from 'eslint-plugin-no-relative-import-paths'
 
 export default [
   ...tanstackConfig,
+  // importPlugin.flatConfigs.recommended,
+  globalIgnores(['.regibyte']),
   {
     rules: {
       '@typescript-eslint/no-unnecessary-condition': 'off',
@@ -22,6 +26,28 @@ export default [
         {
           groups: [['builtin', 'external'], 'parent', 'sibling', 'index'],
         },
+      ],
+    },
+  },
+  {
+    plugins: {
+      'no-relative-import-paths': noRelativeImportPaths,
+    },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*'],
+              message: 'Use alias imports (@/) instead of relative imports.',
+            },
+          ],
+        },
+      ],
+      'no-relative-import-paths/no-relative-import-paths': [
+        'error',
+        { allowSameFolder: true, rootDir: 'src', prefix: '@' },
       ],
     },
   },

@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
-import {  Suspense, useEffect, useRef } from 'react'
-import type {ChangeEvent} from 'react';
+import { Suspense, useEffect, useRef } from 'react'
+import type { ChangeEvent } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
-import { useAtomState } from '../lib/state'
+import { useAtomState } from '@/core/lib/state'
 import {
   useMediapipeResource,
   useMediapipeStatus,
-} from '@/lib/mediapipe/system'
+} from '@/core/lib/mediapipe/system'
 
 export const Route = createFileRoute('/mediapipe-demo')({
   component: MediaPipeDemoPage,
