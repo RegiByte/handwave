@@ -4,6 +4,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
+import { cloudflare } from '@cloudflare/vite-plugin'
 import path from 'node:path'
 
 const config = defineConfig({
@@ -13,6 +14,7 @@ const config = defineConfig({
     },
   },
   plugins: [
+    cloudflare({ viteEnvironment: { name: 'ssr' } }),
     devtools(),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({

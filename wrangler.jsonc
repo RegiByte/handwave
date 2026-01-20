@@ -1,6 +1,12 @@
 {
-    "$schema": "./node_modules/wrangler/config-schema.json",
-    "name": "handwave",
-    "pages_build_output_dir": "./dist",
-    "compatibility_date": "2026-01-05"
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "handwave",
+  "compatibility_date": "2026-01-14",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "@tanstack/react-start/server-entry",
+  "observability": {
+    "enabled": true
   }
+}
