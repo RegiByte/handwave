@@ -14,7 +14,7 @@
  *       ↓
  *   loop ← camera, detectionWorker, canvas
  *       ↓
- *   runtime ← camera, loop
+ *   runtime ← camera, loop, detectionWorker
  *       ↓
  *   shortcuts ← runtime
  *
@@ -31,6 +31,9 @@ import { frameRater } from './resources/frameRater'
 import { loopResource } from './resources/loop'
 import { runtimeResource } from './resources/runtime'
 import { shortcutsResource } from './resources/shortcuts'
+import { recordingResource } from '@/core/lib/intent/resources/recordingResource'
+import { frameHistoryResource } from '@/core/lib/intent/resources/frameHistoryResource'
+import { intentEngineResource } from '@/core/lib/intent/dsl'
 
 // System configuration - defines the resource graph
 export const mediapipeSystemConfig = {
@@ -41,6 +44,9 @@ export const mediapipeSystemConfig = {
   loop: loopResource,
   runtime: runtimeResource,
   shortcuts: shortcutsResource,
+  recording: recordingResource,
+  frameHistory: frameHistoryResource,
+  intentEngine: intentEngineResource,
 }
 
 // Create the system manager (singleton)

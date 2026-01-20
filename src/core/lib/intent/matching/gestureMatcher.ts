@@ -31,21 +31,68 @@ import { intentKeywords } from '@/core/lib/intent/vocabulary'
  */
 export function matchesGesture(
   frame: FrameSnapshot,
-  pattern: Pattern
+  pattern: Pattern,
 ): boolean {
   // Type guard: ensure it's a gesture pattern
   if (pattern.type !== intentKeywords.patternTypes.gesture) {
     return false
   }
 
-  // TODO: Implement in Phase 1
-  // TypeScript now knows pattern is GesturePattern
-  // 1. Extract gesture result from frame
-  // 2. Find hand by handedness (left/right) and optionally handIndex
-  // 3. If handIndex specified, match ONLY that hand instance
-  // 4. If handIndex not specified, match ANY hand of that handedness
-  // 5. Check gesture name matches
-  // 6. Check confidence threshold
+  // Extract gesture result from frame
+  const gestureResult = frame.gestureResult
+  if (
+    !gestureResult ||
+    !gestureResult.hands ||
+    gestureResult.hands.length === 0
+  ) {
+    return false
+  }
+
+  // Find matching hand(s)
+  const matchingHands = gestureResult.hands.filter((hand) => {
+    // Normalize handedness (MediaPipe uses 'Left'/'Right', we use 'left'/'right')
+    const handedness = hand.handedness?.toLowerCase() as 'left' | 'right'
+
+    // Check handedness matches
+    if (handedness !== pattern.hand) {
+      return false
+    }
+
+    // If handIndex specified, match ONLY that specific hand instance
+    if (
+      pattern.handIndex !== undefined &&
+      hand.handIndex !== pattern.handIndex
+    ) {
+      return false
+    }
+
+    return true
+  })
+
+  // No matching hands found
+  if (matchingHands.length === 0) {
+    return false
+  }
+
+  // Check gesture and confidence for each matching hand
+  for (const hand of matchingHands) {
+    const gesture = hand.gesture
+    const confidence = hand.gestureScore ?? 0
+
+    // Check if gesture name matches
+    if (gesture !== pattern.gesture) {
+      continue
+    }
+
+    // Check confidence threshold
+    // Use provided confidence or default to 0.7
+    const threshold = pattern.confidence ?? 0.7
+
+    if (confidence >= threshold) {
+      return true
+    }
+  }
+
   return false
 }
 
@@ -60,13 +107,31 @@ export function matchesGesture(
 export function getGestureForHand(
   frame: FrameSnapshot,
   hand: 'left' | 'right',
-  handIndex: number
+  handIndex: number,
 ): { gesture: string; confidence: number } | null {
-  // TODO: Implement in Phase 1
-  // 1. Extract gesture result from frame
-  // 2. Find hand by handedness AND handIndex
-  // 3. Return gesture name and confidence
-  return null
+  const gestureResult = frame.gestureResult
+  if (
+    !gestureResult ||
+    !gestureResult.hands ||
+    gestureResult.hands.length === 0
+  ) {
+    return null
+  }
+
+  // Find the specific hand instance
+  const matchingHand = gestureResult.hands.find((h) => {
+    const handedness = h.handedness?.toLowerCase() as 'left' | 'right'
+    return handedness === hand && h.handIndex === handIndex
+  })
+
+  if (!matchingHand) {
+    return null
+  }
+
+  return {
+    gesture: matchingHand.gesture,
+    confidence: matchingHand.gestureScore ?? 0,
+  }
 }
 
 /**
@@ -78,11 +143,23 @@ export function getGestureForHand(
  */
 export function getHandedness(
   gestureResult: any, // TODO: Type this with MediaPipe types
-  handIndex: number
+  handIndex: number,
 ): 'left' | 'right' | null {
-  // TODO: Implement in Phase 1
-  // Extract handedness from MediaPipe result
-  return null
+  if (
+    !gestureResult ||
+    !gestureResult.hands ||
+    gestureResult.hands.length === 0
+  ) {
+    return null
+  }
+
+  const hand = gestureResult.hands.find((h: any) => h.handIndex === handIndex)
+  if (!hand || !hand.handedness) {
+    return null
+  }
+
+  // Normalize handedness (MediaPipe uses 'Left'/'Right', we use 'left'/'right')
+  return hand.handedness.toLowerCase() as 'left' | 'right'
 }
 
 /**
@@ -91,17 +168,27 @@ export function getHandedness(
  * @param frame - Frame to extract from
  * @returns Array of gesture data with hand indices
  */
-export function getAllGestures(
-  frame: FrameSnapshot
-): Array<{
+export function getAllGestures(frame: FrameSnapshot): Array<{
   hand: 'left' | 'right'
   handIndex: number
   gesture: string
   confidence: number
 }> {
-  // TODO: Implement in Phase 1
-  // Return all detected hands with their indices (0-3)
-  return []
+  const gestureResult = frame.gestureResult
+  if (
+    !gestureResult ||
+    !gestureResult.hands ||
+    gestureResult.hands.length === 0
+  ) {
+    return []
+  }
+
+  return gestureResult.hands.map((h) => ({
+    hand: h.handedness?.toLowerCase() as 'left' | 'right',
+    handIndex: h.handIndex,
+    gesture: h.gesture,
+    confidence: h.gestureScore ?? 0,
+  }))
 }
 
 // ============================================================================
@@ -132,4 +219,3 @@ export function normalizeGestureName(gestureName: string): string | null {
 
   return isValidGesture(normalized) ? normalized : null
 }
-

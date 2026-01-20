@@ -18,6 +18,8 @@ import { defineResource } from 'braided'
 import type { WorkerStoreResource } from './workerStore'
 import type { WorkerVisionResource } from './workerVision'
 import { writeDetectionResults } from '@/core/lib/mediapipe/shared/detectionWrite'
+import { normalizedToCellByResolution } from '@/core/lib/intent/spatial/grid'
+import type { HandSpatialInfo } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
 
 // ============================================================================
 // Types
@@ -111,8 +113,9 @@ export const workerDetectors = defineResource({
     /**
      * Run detection on a single frame
      * Writes raw MediaPipe results directly to SharedArrayBuffer (zero-copy)
+     * Returns spatial data for progress event reporting
      */
-    const detect = (input: DetectionInput): void => {
+    const detect = (input: DetectionInput): Array<HandSpatialInfo> | null => {
       const start = performance.now()
       const { detectFace, detectHands } = workerStore.getState().detection
 
@@ -153,22 +156,35 @@ export const workerDetectors = defineResource({
             input.workerFPS, // Pass FPS from workerUpdateLoop
           )
         }
+
+        // Spatial hash update (returns data for progress event)
+        const spatialData = updateSpatialHash(
+          workerStore,
+          rawGestureResult,
+          input.timestamp,
+        )
+        
+        return spatialData
       } catch (error) {
         console.error('[WorkerDetectors] Detection error:', error)
+        return null
       }
 
       const processingTimeMs = performance.now() - start
       workerStore.setLastDetectionTime(processingTimeMs)
       workerStore.incrementFrameCount()
+      
+      return null // No spatial data if error
     }
 
     /**
      * Detect from the latest pushed frame
      * Used by workerUpdateLoop each tick
+     * Returns spatial data for progress event reporting
      */
-    const detectFromLatestFrame = (workerFPS?: number): void => {
+    const detectFromLatestFrame = (workerFPS?: number): Array<HandSpatialInfo> | null => {
       if (!latestFrame) {
-        return
+        return null
       }
 
       // Draw frame to internal canvas for MediaPipe
@@ -178,7 +194,7 @@ export const workerDetectors = defineResource({
 
       // Run detection on the internal canvas (or directly on bitmap)
       const source = internalCanvas || latestFrame
-      detect({ source, timestamp: latestFrameTimestamp, workerFPS })
+      return detect({ source, timestamp: latestFrameTimestamp, workerFPS })
     }
 
     /**
@@ -212,3 +228,81 @@ export const workerDetectors = defineResource({
 })
 
 export type WorkerDetectorsResource = StartedResource<typeof workerDetectors>
+
+// ============================================================================
+// Spatial Hash Update Helper
+// ============================================================================
+
+/**
+ * Update spatial hash with hand positions
+ * Returns spatial data for progress event reporting
+ * 
+ * CRITICAL: Applies dead zone transformation and mirroring BEFORE calculating cells
+ * This ensures worker and main thread calculate in the SAME coordinate space
+ */
+function updateSpatialHash(
+  workerStore: WorkerStoreResource,
+  gestureResult: GestureRecognizerResult | null,
+  _timestamp: number,
+): Array<HandSpatialInfo> | null {
+  const spatialHash = workerStore.getSpatialHash()
+  const spatialConfig = workerStore.getState().spatial
+  const displayContext = workerStore.getState().displayContext
+
+  if (!spatialHash || !spatialConfig.enabled || !gestureResult) {
+    return null
+  }
+
+  // Clear previous frame (fresh state each frame)
+  spatialHash.clearAll()
+
+  // Extract and insert hand positions
+  const handSpatialInfo: Array<HandSpatialInfo> = []
+
+  for (let i = 0; i < gestureResult.landmarks.length; i++) {
+    const landmarks = gestureResult.landmarks[i]
+    const trackedLandmark = landmarks[spatialConfig.trackedLandmarkIndex]
+
+    if (trackedLandmark) {
+      // Step 1: Start with MediaPipe normalized coordinates (0-1)
+      const rawX = trackedLandmark.x
+      const rawY = trackedLandmark.y
+      const rawZ = trackedLandmark.z
+      
+      // Step 2: Apply mirroring FIRST (in raw normalized space)
+      // This matches what visualization does: mirror before dead zone transform
+      const mirroredX = displayContext.mirrored ? 1 - rawX : rawX
+      const mirroredY = rawY
+      
+      // Step 3: Apply dead zone transformation to get safe-zone-normalized coordinates
+      const deadZones = displayContext.deadZones
+      const safeNormalizedX = (mirroredX - deadZones.left) / (1 - deadZones.left - deadZones.right)
+      const safeNormalizedY = (mirroredY - deadZones.top) / (1 - deadZones.top - deadZones.bottom)
+      
+      // Step 4: Create position in SAFE ZONE coordinate space
+      // Now worker and visualization are in the SAME space!
+      const position = {
+        x: safeNormalizedX,
+        y: safeNormalizedY,
+        z: rawZ, // Z doesn't need transformation
+      }
+
+      // Insert into spatial hash (all resolutions)
+      spatialHash.insertAll(position, { handIndex: i })
+
+      // Calculate cells from safe-zone-normalized coordinates
+      // These cells now MATCH what the visualization will calculate!
+      handSpatialInfo.push({
+        handIndex: i,
+        landmarkIndex: spatialConfig.trackedLandmarkIndex,
+        cells: {
+          coarse: normalizedToCellByResolution(position, 'coarse'),
+          medium: normalizedToCellByResolution(position, 'medium'),
+          fine: normalizedToCellByResolution(position, 'fine'),
+        },
+      })
+    }
+  }
+
+  return handSpatialInfo.length > 0 ? handSpatialInfo : null
+}

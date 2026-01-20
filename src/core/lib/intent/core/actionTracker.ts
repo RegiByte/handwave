@@ -22,8 +22,36 @@ import type {
   EndReason,
   FrameSnapshot,
   Intent,
+  Pattern,
 } from './types'
+import { checkHeldFor } from './frameHistory'
+import { invariant } from '@/core/lib/invariant'
 import { intentKeywords } from '@/core/lib/intent/vocabulary'
+import { matchesGesture } from '@/core/lib/intent/matching/gestureMatcher'
+import { matchesContact } from '@/core/lib/intent/matching/contactDetector'
+
+// ============================================================================
+// Pattern Matching Helper
+// ============================================================================
+
+/**
+ * Match a pattern against a frame (discriminated by type)
+ *
+ * @param frame - Frame to check
+ * @param pattern - Pattern to match
+ * @returns True if pattern matches
+ */
+function matchPattern(frame: FrameSnapshot, pattern: Pattern): boolean {
+  switch (pattern.type) {
+    case 'gesture':
+      return matchesGesture(frame, pattern)
+    case 'contact':
+      return matchesContact(frame, pattern)
+    default:
+      invariant('Invalid pattern type')
+      return false
+  }
+}
 
 // ============================================================================
 // Action ID Generation
@@ -66,11 +94,37 @@ export function shouldStartAction(
   frame: FrameSnapshot,
   history: Array<FrameSnapshot>
 ): boolean {
-  // TODO: Implement in Phase 3
-  // - Check modifier pattern (if present)
-  // - Check action pattern
-  // - Check temporal constraints (minDuration)
-  return false
+  // 1. Check modifier pattern (if present)
+  if (intent.modifier) {
+    const modifierMatches = matchPattern(frame, intent.modifier)
+    if (!modifierMatches) {
+      return false
+    }
+  }
+
+  // 2. Check action pattern
+  const actionMatches = matchPattern(frame, intent.action)
+  if (!actionMatches) {
+    return false
+  }
+
+  // 3. Check minDuration (if specified)
+  if (intent.temporal?.minDuration) {
+    // Check if both patterns have been held for the minimum duration
+    const predicate = (f: FrameSnapshot) => {
+      if (intent.modifier && !matchPattern(f, intent.modifier)) {
+        return false
+      }
+      return matchPattern(f, intent.action)
+    }
+    
+    const held = checkHeldFor(history, intent.temporal.minDuration, predicate)
+    if (!held) {
+      return false
+    }
+  }
+
+  return true
 }
 
 /**
@@ -86,11 +140,26 @@ export function shouldContinueAction(
   intent: Intent,
   frame: FrameSnapshot
 ): boolean {
-  // TODO: Implement in Phase 3
-  // - Check if modifier still matches (if present)
-  // - Check if action still matches
-  // - Check temporal constraints (maxGap)
-  return false
+  // 1. Check if modifier still matches (if present)
+  if (intent.modifier && !matchPattern(frame, intent.modifier)) {
+    return false
+  }
+
+  // 2. Check if action still matches
+  if (!matchPattern(frame, intent.action)) {
+    return false
+  }
+
+  // 3. Check maxGap (if specified)
+  // If time since last update > maxGap, end action
+  if (intent.temporal?.maxGap) {
+    const timeSinceUpdate = frame.timestamp - action.lastUpdateTime
+    if (timeSinceUpdate > intent.temporal.maxGap) {
+      return false
+    }
+  }
+
+  return true
 }
 
 /**
@@ -106,10 +175,26 @@ export function determineEndReason(
   intent: Intent,
   frame: FrameSnapshot
 ): EndReason {
-  // TODO: Implement in Phase 3
-  // - Check if modifier changed → 'cancelled'
-  // - Check if tracking lost → 'timeout'
-  // - Otherwise → 'completed'
+  // Check if modifier changed
+  if (intent.modifier && !matchPattern(frame, intent.modifier)) {
+    return intentKeywords.endReasons.cancelled as EndReason
+  }
+
+  // Check if hand tracking lost
+  const gestureResult = frame.gestureResult
+  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+    return intentKeywords.endReasons.timeout as EndReason
+  }
+
+  // Check if specific hand lost
+  const hand = gestureResult.hands.find(h => 
+    h.handedness.toLowerCase() === action.context.hand &&
+    h.handIndex === action.context.handIndex
+  )
+  if (!hand) {
+    return intentKeywords.endReasons.timeout as EndReason
+  }
+
   return intentKeywords.endReasons.completed as EndReason
 }
 

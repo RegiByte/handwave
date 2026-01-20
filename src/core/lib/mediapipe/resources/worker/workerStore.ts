@@ -10,12 +10,16 @@
 
 import { defineResource } from 'braided'
 import type {
+  DeadZones,
   FaceLandmarkerConfig,
   GestureRecognizerConfig,
+  GridResolution,
   ModelPaths,
 } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
 import type { DetectionBufferViews } from '@/core/lib/mediapipe/shared/detectionBuffer'
 import { createAtom } from '@/core/lib/state'
+import { createMultiResolutionSpatialHash } from '@/core/lib/intent/spatial/grid'
+import type { MultiResolutionSpatialHash } from '@/core/lib/intent/spatial/grid'
 
 // ============================================================================
 // State Types
@@ -56,6 +60,20 @@ export type WorkerStoreState = {
     y: number
     width: number
     height: number
+  }
+
+  // Spatial tracking state
+  spatial: {
+    enabled: boolean
+    gridResolution: GridResolution | 'all'
+    trackedLandmarkIndex: number // 8 = index finger tip
+  }
+
+  // Display context (synced from main thread)
+  // Needed for correct coordinate space calculations
+  displayContext: {
+    deadZones: DeadZones
+    mirrored: boolean
   }
 }
 
@@ -115,6 +133,20 @@ const createDefaultState = (): WorkerStoreState => ({
     width: 640,
     height: 480,
   },
+  spatial: {
+    enabled: true,
+    gridResolution: 'all',
+    trackedLandmarkIndex: 8, // Index finger tip
+  },
+  displayContext: {
+    deadZones: {
+      top: 0.05,
+      bottom: 0.15,
+      left: 0.05,
+      right: 0.05,
+    },
+    mirrored: true, // Default to mirrored (selfie mode, matches loop/runtime defaults)
+  },
 })
 
 // ============================================================================
@@ -155,6 +187,11 @@ export const createWorkerStore = (initialState?: Partial<WorkerStoreState>) =>
 
       // SharedArrayBuffer views (stored outside of atom for performance)
       let sharedBufferViews: DetectionBufferViews | null = null
+
+      // Spatial hash (stored outside of atom for performance)
+      type HandData = { handIndex: number }
+      const spatialHash: MultiResolutionSpatialHash<HandData> | null =
+        createMultiResolutionSpatialHash<HandData>()
 
       console.log('[WorkerStore] Initialized with state:', store.get())
 
@@ -251,6 +288,55 @@ export const createWorkerStore = (initialState?: Partial<WorkerStoreState>) =>
         },
 
         getViewport: () => store.get().viewport,
+
+        // Display context management
+        setDisplayContext: (context: Partial<WorkerStoreState['displayContext']>) => {
+          store.mutate((s) => {
+            Object.assign(s.displayContext, context)
+          })
+          console.log('[WorkerStore] Display context updated:', context)
+        },
+
+        setDeadZones: (deadZones: DeadZones) => {
+          store.mutate((s) => {
+            s.displayContext.deadZones = deadZones
+          })
+          console.log('[WorkerStore] Dead zones updated:', deadZones)
+        },
+
+        setMirrored: (mirrored: boolean) => {
+          store.mutate((s) => {
+            s.displayContext.mirrored = mirrored
+          })
+          console.log('[WorkerStore] Mirrored updated:', mirrored)
+        },
+
+        // Spatial hash management
+        getSpatialHash: () => spatialHash,
+
+        setSpatialEnabled: (enabled: boolean) => {
+          store.mutate((s) => {
+            s.spatial.enabled = enabled
+          })
+          console.log(
+            '[WorkerStore] Spatial tracking',
+            enabled ? 'enabled' : 'disabled',
+          )
+        },
+
+        setGridResolution: (resolution: GridResolution | 'all') => {
+          store.mutate((s) => {
+            s.spatial.gridResolution = resolution
+          })
+          console.log('[WorkerStore] Grid resolution set to:', resolution)
+        },
+
+        setTrackedLandmark: (index: number) => {
+          store.mutate((s) => {
+            s.spatial.trackedLandmarkIndex = index
+          })
+          console.log('[WorkerStore] Tracked landmark index set to:', index)
+        },
       }
     },
     halt: () => {

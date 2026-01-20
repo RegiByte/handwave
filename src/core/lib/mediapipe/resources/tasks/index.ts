@@ -26,3 +26,9 @@ export * from './debug/hand-coordinates'
 export * from './debug/face-mesh-indices'
 export * from './debug/hand-custom-connections'
 export * from './debug/grid-overlay'
+export * from './debug/multi-grid-overlay'
+
+// Intent Engine tasks
+export * from './pinch-rings'
+export * from './gesture-duration'
+export * from './particles'

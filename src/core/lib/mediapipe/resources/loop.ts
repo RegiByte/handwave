@@ -21,7 +21,7 @@ import type {
 } from '@mediapipe/tasks-vision'
 import type { CameraAPI } from './camera'
 import type { CanvasAPI } from './canvas'
-import type { DetectionWorkerAPI } from './detectionWorker'
+import type { DetectionWorkerResource } from './detectionWorker'
 import type { FrameRaterAPI } from './frameRater'
 import type { RenderContext } from './tasks/types'
 import { createAtom, createSubscription } from '@/core/lib/state'
@@ -50,7 +50,7 @@ export type RenderTask = (context: RenderContext) => void
 
 export type LoopDependencies = {
   camera: CameraAPI & { state: ReturnType<typeof createAtom<any>> }
-  detectionWorker: DetectionWorkerAPI
+  detectionWorker: DetectionWorkerResource
   canvas: CanvasAPI
   frameRater: FrameRaterAPI
 }
@@ -132,6 +132,7 @@ export const loopResource = defineResource({
     })
 
     const frame$ = createSubscription<FrameData>()
+    const workerReady$ = createSubscription<{ mirrored: boolean }>()
     const renderTasks = new Set<RenderTask>()
 
     let rafId: number | null = null
@@ -398,6 +399,14 @@ export const loopResource = defineResource({
               s.workerFPS = currentWorkerFPS
             })
           }
+
+          // Emit frame event for subscribers (e.g., recording resource)
+          frame$.notify({
+            timestamp: sharedResults.timestamp,
+            video,
+            faceResult: sharedResults.faceResult,
+            gestureResult: sharedResults.gestureResult,
+          })
         }
       }
 
@@ -455,6 +464,7 @@ export const loopResource = defineResource({
     const api = {
       state,
       frame$,
+      workerReady$,
 
       start: () => {
         if (state.get().running) return
@@ -464,12 +474,18 @@ export const loopResource = defineResource({
 
         // Initialize worker detection on first start
         if (!detectionWorker.isInitialized()) {
-          initializeWorkerDetection().catch((error) => {
-            console.error(
-              '[Loop] Failed to initialize worker detection:',
-              error,
-            )
-          })
+          initializeWorkerDetection()
+            .then(() => {
+              // Emit workerReady event so runtime can sync display context
+              console.log('[Loop] Emitting workerReady event...')
+              workerReady$.notify({ mirrored: state.get().mirrored })
+            })
+            .catch((error) => {
+              console.error(
+                '[Loop] Failed to initialize worker detection:',
+                error,
+              )
+            })
         }
 
         rafId = requestAnimationFrame(tick)
@@ -539,7 +555,8 @@ export const loopResource = defineResource({
   halt: (loop) => {
     loop.stop()
     loop.frame$.clear()
+    loop.workerReady$.clear()
   },
 })
 
-export type LoopAPI = StartedResource<typeof loopResource>
+export type LoopResource = StartedResource<typeof loopResource>

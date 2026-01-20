@@ -10,6 +10,7 @@
 import { throttle } from '@tanstack/pacer'
 import { defineResource } from 'braided'
 import type { RuntimeAPI } from './runtime'
+import type { GridResolution } from '@/core/lib/intent/core/types'
 
 // ============================================================================
 // Types
@@ -114,9 +115,17 @@ export const shortcutsResource = defineResource({
         console.log('[Shortcuts] Toggling grid overlay')
         runtime.commands.toggleGridOverlay()
       },
+      setGridResolution: (resolution: GridResolution | 'all') => {
+        console.log('[Shortcuts] Setting grid resolution:', resolution)
+        runtime.commands.setGridResolution(resolution)
+      },
       toggleVideoForeground: () => {
         console.log('[Shortcuts] Toggling video foreground')
         runtime.commands.toggleVideoForeground()
+      },
+      toggleParticles: () => {
+        console.log('[Shortcuts] Toggling particles')
+        runtime.commands.toggleParticles()
       },
     }
 
@@ -129,9 +138,11 @@ export const shortcutsResource = defineResource({
       toggleMirror: throttle(commands.toggleMirror, { wait: 100 }),
       toggleDebugMode: throttle(commands.toggleDebugMode, { wait: 100 }),
       toggleGridOverlay: throttle(commands.toggleGridOverlay, { wait: 100 }),
+      setGridResolution: throttle(commands.setGridResolution, { wait: 100 }),
       toggleVideoForeground: throttle(commands.toggleVideoForeground, {
         wait: 100,
       }),
+      toggleParticles: throttle(commands.toggleParticles, { wait: 100 }),
       schedulePause: throttle(() => {
         if (schedulePauseTimeout) {
           clearTimeout(schedulePauseTimeout)
@@ -168,8 +179,28 @@ export const shortcutsResource = defineResource({
         handler: () => throttledCommands.toggleGridOverlay(),
       },
       {
+        keymaps: ['1'],
+        handler: () => throttledCommands.setGridResolution('coarse'),
+      },
+      {
+        keymaps: ['2'],
+        handler: () => throttledCommands.setGridResolution('medium'),
+      },
+      {
+        keymaps: ['3'],
+        handler: () => throttledCommands.setGridResolution('fine'),
+      },
+      {
+        keymaps: ['4'],
+        handler: () => throttledCommands.setGridResolution('all'),
+      },
+      {
         keymaps: ['v'],
         handler: () => throttledCommands.toggleVideoForeground(),
+      },
+      {
+        keymaps: ['p'],
+        handler: () => throttledCommands.toggleParticles(),
       },
     ]
 

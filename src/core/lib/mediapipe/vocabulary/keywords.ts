@@ -27,17 +27,20 @@ export const mediapipeKeywords = {
     // Debug toggles
     toggleDebugMode: 'toggleDebugMode',
     toggleGridOverlay: 'toggleGridOverlay',
+    setGridResolution: 'setGridResolution',
     toggleHandLandmarkLabels: 'toggleHandLandmarkLabels',
     toggleFaceLandmarkLabels: 'toggleFaceLandmarkLabels',
     toggleBlendshapesDisplay: 'toggleBlendshapesDisplay',
     toggleHandCoordinates: 'toggleHandCoordinates',
     toggleVideoForeground: 'toggleVideoForeground',
+    toggleParticles: 'toggleParticles',
   },
   events: {
     // Lifecycle
     initialized: 'initialized',
     started: 'started',
     stopped: 'stopped',
+    workerReady: 'workerReady', // Emitted when detection worker is fully initialized
     
     // State changes
     paused: 'paused',
@@ -52,6 +55,10 @@ export const mediapipeKeywords = {
     // Debug state changes
     debugModeToggled: 'debugModeToggled',
     gridOverlayToggled: 'gridOverlayToggled',
+    gridResolutionChanged: 'gridResolutionChanged',
+    videoForegroundToggled: 'videoForegroundToggled',
+    particlesToggled: 'particlesToggled',
+    spatialUpdate: 'spatialUpdate',
     
     // Errors
     error: 'error',

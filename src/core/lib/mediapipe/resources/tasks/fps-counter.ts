@@ -1,11 +1,11 @@
 import type { RenderTask } from './types'
-import type { LoopAPI } from '@/core/lib/mediapipe/resources/loop'
+import type { LoopResource } from '@/core/lib/mediapipe/resources/loop'
 
 /**
  * Render task: Show FPS counter
  * Displays both render FPS (main thread) and worker FPS (detection thread)
  */
-export const createFpsTask = (loopState: LoopAPI['state']): RenderTask => {
+export const createFpsTask = (loopState: LoopResource['state']): RenderTask => {
   return ({ ctx, width }) => {
     const { fps, workerFPS } = loopState.get()
 

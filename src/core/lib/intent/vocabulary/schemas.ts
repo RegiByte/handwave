@@ -71,6 +71,37 @@ export const viewportSchema = z.object({
 
 export type Viewport = z.infer<typeof viewportSchema>
 
+/**
+ * Grid resolution enum
+ */
+export const gridResolutionSchema = z.enum([
+  intentKeywords.gridResolutions.coarse,
+  intentKeywords.gridResolutions.medium,
+  intentKeywords.gridResolutions.fine,
+])
+
+export type GridResolution = z.infer<typeof gridResolutionSchema>
+
+/**
+ * Grid presets configuration
+ */
+export const gridPresetsSchema = z.object({
+  coarse: gridConfigSchema,
+  medium: gridConfigSchema,
+  fine: gridConfigSchema,
+})
+
+export type GridPresets = z.infer<typeof gridPresetsSchema>
+
+export const deadZonesSchema = z.object({
+  top: z.number().min(0).max(1),
+  bottom: z.number().min(0).max(1),
+  left: z.number().min(0).max(1),
+  right: z.number().min(0).max(1),
+})
+
+export type DeadZones = z.infer<typeof deadZonesSchema>
+
 // ============================================================================
 // Pattern Matching Types
 // ============================================================================
@@ -97,7 +128,7 @@ export const gesturePatternSchema = z.object({
     intentKeywords.gestures.iLoveYou,
     intentKeywords.gestures.none,
   ]),
-  confidence: z.number().min(0).max(1).optional().default(0.7),
+  confidence: z.number().min(0).max(1).default(0.7).optional(),
 })
 
 export type GesturePattern = z.infer<typeof gesturePatternSchema>
@@ -157,6 +188,7 @@ export type Pattern = z.infer<typeof patternSchema>
  */
 export const spatialConfigSchema = z.object({
   grid: gridConfigSchema.optional(),
+  gridResolution: gridResolutionSchema.optional(),
   hysteresis: hysteresisConfigSchema.optional(),
 })
 
@@ -187,6 +219,7 @@ export const actionContextSchema = z.object({
   intentId: z.string(),
   hand: z.enum([intentKeywords.hands.left, intentKeywords.hands.right]),
   handIndex: z.number().int().min(0).max(3), // Required: which hand instance (0-3)
+  headIndex: z.number().int().min(0).max(1).default(0), // Which person (0-1 for 2 heads)
   position: positionSchema,
   cell: cellSchema,
   velocity: vector3Schema,
@@ -248,12 +281,34 @@ export type EndReason = z.infer<typeof endReasonSchema>
 // ============================================================================
 
 /**
- * Frame snapshot (simplified - references MediaPipe types)
+ * Frame snapshot (uses enriched recording format)
+ * 
+ * Note: This uses the enriched format from recordingSchemas, not raw MediaPipe.
+ * Each hand includes: handIndex, gesture, gestureScore (added by recording system)
  */
 export const frameSnapshotSchema = z.object({
   timestamp: z.number(),
-  faceResult: z.any().nullable(), // Will reference MediaPipe types
-  gestureResult: z.any().nullable(), // Will reference MediaPipe types
+  faceResult: z.any().nullable(), // TODO: Use enriched face schema when needed
+  gestureResult: z.object({
+    hands: z.array(z.object({
+      handedness: z.string(), // 'left' or 'right' (lowercase)
+      handIndex: z.number().int().min(0).max(3),
+      headIndex: z.number().int().min(0).max(1).default(0), // Which person (0-1 for 2 heads)
+      gesture: z.string(),
+      gestureScore: z.number(),
+      landmarks: z.array(z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+        visibility: z.number().optional(),
+      })),
+      worldLandmarks: z.array(z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      })).optional(),
+    })),
+  }).nullable(),
 })
 
 export type FrameSnapshot = z.infer<typeof frameSnapshotSchema>

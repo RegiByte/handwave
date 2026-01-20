@@ -24,6 +24,12 @@ export const detectionKeywords = {
 
     // Commands
     command: 'detection/command',
+
+    // Spatial
+    setGridResolution: 'detection/setGridResolution',
+    
+    // Display context sync
+    updateDisplayContext: 'detection/updateDisplayContext',
   },
 
   commands: {
@@ -33,6 +39,7 @@ export const detectionKeywords = {
     resume: 'resume',
     setTargetFPS: 'setTargetFPS',
     setDetectionSettings: 'setDetectionSettings',
+    setGridResolution: 'setGridResolution',
   },
 
   events: {
@@ -43,5 +50,6 @@ export const detectionKeywords = {
     resumed: 'resumed',
     frame: 'frame',
     error: 'error',
+    spatialUpdate: 'spatialUpdate',
   },
 } as const

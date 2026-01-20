@@ -63,8 +63,8 @@ export function createAtom<T>(initialState: T) {
   return api
 }
 
-export function useAtomState<T extends Atom<any>>(atom: T) {
-  return useSyncExternalStore(atom.subscribe, atom.get, () => atom.get())
+export function useAtomState<T extends Atom<any>>(atom: T): AtomState<T> {
+  return useSyncExternalStore(atom.subscribe, atom.get, atom.get)
 }
 
 export type Atom<T> = ReturnType<typeof createAtom<T>>

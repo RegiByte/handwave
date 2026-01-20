@@ -26,8 +26,56 @@ export * from './core/types'
 // DSL (Intent Definition)
 // ============================================================================
 
-export { defineIntent, createEventBuilder, createEndEventBuilder } from './dsl/defineIntent'
-export { createIntentEngine, createDefaultConfig, mergeConfigs } from './dsl/createEngine'
+// Export DSL builders and functions
+export {
+  gesture,
+  pinch,
+  anyOf,
+  allOf,
+  gestures,
+  pinches,
+  intent,
+  isIntent,
+  getIntentDef,
+  getEventTypes,
+  matchPatternExpr,
+  matchPatternDef,
+  extractMatchedHandFromPattern,
+  processFrameV2,
+  createSubscriptionManager,
+  intentEngineResource,
+  calculateGesturePosition,
+} from './dsl'
+
+// Export DSL types (these may overlap with vocabulary, but DSL takes precedence)
+export type {
+  PatternDef,
+  GesturePatternDef,
+  PinchPatternDef,
+  CompositePatternDef,
+  PatternExpr,
+  PatternExprInternals,
+  GestureExpr,
+  PinchExpr,
+  SomePatternExpr,
+  ResolutionConfig,
+  IntentDef,
+  IntentEventDescriptor,
+  StandardEventBase,
+  StandardStartEvent,
+  StandardUpdateEvent,
+  StandardEndEvent,
+  StandardIntentEvents,
+  IntentId,
+  IntentEvents,
+  IntentStartEvent,
+  IntentUpdateEvent,
+  IntentEndEvent,
+  DescriptorEvent,
+  EventCallback,
+  Unsubscribe,
+  IntentEngineAPI,
+} from './dsl'
 
 // ============================================================================
 // Core Functions (Frame History)
@@ -178,10 +226,59 @@ export {
 } from './spatial/coordinates'
 
 // ============================================================================
+// Gesture Calibration
+// ============================================================================
+
+export {
+  normalizeGestureConfidence,
+  meetsGestureThreshold,
+  getGestureThreshold,
+  getGestureCalibration,
+  getAllCalibrations,
+  compareGestureConfidence,
+  filterByQuality,
+  GESTURE_CALIBRATIONS,
+} from './matching/gestureCalibration'
+export type {
+  GestureCalibration,
+  NormalizedConfidence,
+} from './matching/gestureCalibration'
+
+// ============================================================================
+// Pinch Calibration
+// ============================================================================
+
+export {
+  getPinchThreshold,
+  getAllPinchThresholds,
+  getPinchCalibration,
+  getAllPinchCalibrations,
+  meetsPinchThreshold,
+  normalizePinchDistance,
+  getPinchQuality,
+  createPinchThresholds,
+  DEFAULT_PINCH_THRESHOLDS,
+  PINCH_CALIBRATIONS,
+} from './matching/pinchCalibration'
+export type {
+  PinchCalibration,
+  FingerName as PinchFingerName,
+} from './matching/pinchCalibration'
+
+// ============================================================================
 // Resources (Braided)
 // ============================================================================
 
-export { intentEngineResource } from './resources/intentEngineResource'
+export { frameHistoryResource } from './resources/frameHistoryResource'
+export type { FrameHistoryAPI } from './resources/frameHistoryResource'
+export { recordingResource } from './resources/recordingResource'
+export type { RecordingResource } from './resources/recordingResource'
+
+// ============================================================================
+// Testing Utilities
+// ============================================================================
+
+export * from './testing'
 
 // ============================================================================
 // React Hooks
@@ -195,4 +292,3 @@ export {
   useFrameHistory,
   useAction,
 } from './resources/hooks'
-

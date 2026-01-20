@@ -21,6 +21,7 @@ import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
 import { systemTasks } from './worker/kernel/systemTasks'
 import { detectionKeywords } from '@/core/lib/mediapipe/vocabulary/detectionKeywords'
+import type { SpatialUpdateMessage } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
 import {
   createDetectionBufferViews,
   createDetectionSharedBuffer,
@@ -29,6 +30,7 @@ import {
 import type { DetectionBufferViews } from '@/core/lib/mediapipe/shared/detectionBuffer'
 import { reconstructDetectionResults } from '@/core/lib/mediapipe/shared/detectionReconstruct'
 import { createClientResource } from '@/core/lib/workerTasks/client'
+import { createSubscription } from '@/core/lib/state'
 
 // Model URLs (CDN-hosted MediaPipe models)
 const MODEL_PATHS = {
@@ -94,6 +96,9 @@ export const detectionWorkerResource = defineResource({
     // SharedArrayBuffer state
     let sharedBufferViews: DetectionBufferViews | null = null
     let sharedBufferEnabled = false
+
+    // Spatial update subscription
+    const spatialUpdateSubscription = createSubscription<SpatialUpdateMessage>()
 
     /**
      * Initialize the worker braided system and load models
@@ -268,6 +273,16 @@ export const detectionWorkerResource = defineResource({
         .onComplete(() => {
           console.log('[Detection Worker Resource] Detection loop started')
         })
+        .onProgress((progress) => {
+          // Forward spatial updates to subscribers
+          if (progress.type === 'spatialUpdate') {
+            spatialUpdateSubscription.notify({
+              type: 'spatialUpdate',
+              timestamp: progress.timestamp,
+              hands: progress.hands,
+            })
+          }
+        })
         .onError((error) => {
           console.error(
             '[Detection Worker Resource] Failed to start detection:',
@@ -316,6 +331,11 @@ export const detectionWorkerResource = defineResource({
       width: number
       height: number
     }): void => {
+      // Skip if worker not initialized yet
+      if (!initialized) {
+        return
+      }
+
       worker
         .dispatch(detectionKeywords.tasks.updateViewport, viewport)
         .onComplete(() => {
@@ -324,6 +344,38 @@ export const detectionWorkerResource = defineResource({
         .onError((error) => {
           console.error(
             '[Detection Worker Resource] Failed to update viewport:',
+            error,
+          )
+        })
+    }
+
+    /**
+     * Update display context (dead zones, mirrored state)
+     * Syncs display state to worker for correct coordinate space calculations
+     */
+    const updateDisplayContext = (context: {
+      deadZones: {
+        top: number
+        bottom: number
+        left: number
+        right: number
+      }
+      mirrored: boolean
+    }): void => {
+      // Skip if worker not initialized yet
+      if (!initialized) {
+        console.log('updateDisplayContext skipped: worker not initialized')
+        return
+      }
+
+      worker
+        .dispatch(detectionKeywords.tasks.updateDisplayContext, context)
+        .onComplete(() => {
+          // no-op
+        })
+        .onError((error) => {
+          console.error(
+            '[Detection Worker Resource] Failed to update display context:',
             error,
           )
         })
@@ -338,12 +390,16 @@ export const detectionWorkerResource = defineResource({
       stopDetection,
       sendCommand,
       updateViewport,
+      updateDisplayContext,
       isInitialized: () => initialized,
 
       // SharedArrayBuffer API (zero-copy detection results)
       readDetectionResults,
       isSharedBufferEnabled,
       getSharedBufferViews,
+
+      // Spatial update subscription
+      onSpatialUpdate: spatialUpdateSubscription.subscribe,
 
       // Base worker API (for advanced usage)
       dispatch: worker.dispatch,
@@ -352,6 +408,7 @@ export const detectionWorkerResource = defineResource({
 
       // Cleanup
       cleanup: () => {
+        spatialUpdateSubscription.clear()
         sharedBufferViews = null
         sharedBufferEnabled = false
       },
@@ -369,4 +426,4 @@ export const detectionWorkerResource = defineResource({
   },
 })
 
-export type DetectionWorkerAPI = StartedResource<typeof detectionWorkerResource>
+export type DetectionWorkerResource = StartedResource<typeof detectionWorkerResource>

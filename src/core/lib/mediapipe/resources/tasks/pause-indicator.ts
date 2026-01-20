@@ -1,11 +1,11 @@
 import type { RenderTask } from './types'
-import type { LoopAPI } from '@/core/lib/mediapipe/resources/loop'
+import type { LoopResource } from '@/core/lib/mediapipe/resources/loop'
 
 /**
  * Render task: Show pause indicator
  */
 export const createPauseIndicatorTask = (
-  loopState: LoopAPI['state'],
+  loopState: LoopResource['state'],
 ): RenderTask => {
   return ({ ctx, width, height }) => {
     if (!loopState.get().paused) return

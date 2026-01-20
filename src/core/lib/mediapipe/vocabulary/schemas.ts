@@ -7,6 +7,7 @@
 
 import { z } from 'zod'
 import { mediapipeKeywords } from './keywords'
+import { gridResolutionSchema } from '@/core/lib/intent/vocabulary/schemas'
 
 // ============================================================================
 // Commands
@@ -85,6 +86,15 @@ const toggleGridOverlayCommandSchema = z.object({
   type: z.literal(mediapipeKeywords.commands.toggleGridOverlay),
 })
 
+const setGridResolutionCommandSchema = z.object({
+  type: z.literal(mediapipeKeywords.commands.setGridResolution),
+  resolution: z.union([gridResolutionSchema, z.literal('all')]),
+})
+
+const toggleParticlesCommandSchema = z.object({
+  type: z.literal(mediapipeKeywords.commands.toggleParticles),
+})
+
 // Union of all commands
 export const mediaPipeCommandSchema = z.discriminatedUnion('type', [
   startCommandSchema,
@@ -103,6 +113,8 @@ export const mediaPipeCommandSchema = z.discriminatedUnion('type', [
   toggleHandCoordinatesCommandSchema,
   toggleVideoForegroundCommandSchema,
   toggleGridOverlayCommandSchema,
+  toggleParticlesCommandSchema,
+  setGridResolutionCommandSchema,
 ])
 
 export type MediaPipeCommand = z.infer<typeof mediaPipeCommandSchema>
@@ -175,11 +187,21 @@ const gridOverlayToggledEventSchema = z.object({
   enabled: z.boolean(),
 })
 
+const gridResolutionChangedEventSchema = z.object({
+  type: z.literal(mediapipeKeywords.events.gridResolutionChanged),
+  resolution: z.union([gridResolutionSchema, z.literal('all')]),
+})
+
 // Error events
 const errorEventSchema = z.object({
   type: z.literal(mediapipeKeywords.events.error),
   error: z.string(),
   meta: z.unknown().optional(),
+})
+
+const particlesToggledEventSchema = z.object({
+  type: z.literal(mediapipeKeywords.events.particlesToggled),
+  particlesEnabled: z.boolean(),
 })
 
 // Union of all events
@@ -195,6 +217,8 @@ export const mediaPipeEventSchema = z.discriminatedUnion('type', [
   devicesEnumeratedEventSchema,
   debugModeToggledEventSchema,
   gridOverlayToggledEventSchema,
+  gridResolutionChangedEventSchema,
+  particlesToggledEventSchema,
   errorEventSchema,
 ])
 

@@ -9,33 +9,41 @@
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
 import type { CameraAPI } from './camera'
-import type { LoopAPI } from './loop'
+import type { LoopResource } from './loop'
+import type { DetectionWorkerResource } from './detectionWorker'
 import {
+  DEAD_ZONE,
   blendshapesDisplayTask,
   createFpsTask,
+  createGestureDurationTask,
+  createMultiGridOverlayTask,
+  createParticlesTask,
   createPauseIndicatorTask,
+  createPinchRingsTask,
   createVideoBackdropTask,
   faceLandmarkLabelsTask,
-  faceMeshIndicesTask,
   faceMeshTask,
-  fingertipsConnectorsTask,
   gestureLabelsTask,
-  gridOverlayTask,
   handCoordinatesTask,
-  handLandmarkLabelsTask,
-  handLandmarksTask,
-  handSkeletonTask,
   handSkeletonTasks,
-  palmHighlightTask,
   smileOverlayTask,
   videoForegroundTask,
 } from './tasks'
 import type { RenderTask } from './tasks/types'
-import type { MediaPipeCommand, MediaPipeEvent } from '@/core/lib/mediapipe/vocabulary/schemas'
+import type { FrameHistoryAPI } from '@/core/lib/intent'
+import type { IntentEngineAPI } from '@/core/lib/intent/dsl'
+import type { GridResolution } from '@/core/lib/intent/core/types'
+import type {
+  MediaPipeCommand,
+  MediaPipeEvent,
+} from '@/core/lib/mediapipe/vocabulary/schemas'
+import type { SpatialUpdateMessage } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
 import { mediapipeKeywords } from '@/core/lib/mediapipe/vocabulary/keywords'
+import { detectionKeywords } from '@/core/lib/mediapipe/vocabulary/detectionKeywords'
 
 import { createChannel } from '@/core/lib/channel'
 import { createAtom } from '@/core/lib/state'
+import { particleIntentsV2 } from '@/core/lib/intent/intents/particleIntents'
 
 // ============================================================================
 // Types
@@ -48,10 +56,16 @@ export type RuntimeState = {
   mirrored: boolean
   debugMode: boolean
   gridOverlay: boolean
+  gridResolution: GridResolution | 'all'
+  particlesEnabled: boolean
   videoDevices: Array<MediaDeviceInfo>
   audioDevices: Array<MediaDeviceInfo>
   selectedVideoDeviceId: string
   selectedAudioDeviceId: string
+  spatial: {
+    latestUpdate: SpatialUpdateMessage | null
+    lastUpdateTime: number
+  }
 }
 
 type CommandHandler<TCommand extends MediaPipeCommand['type']> = (
@@ -74,8 +88,20 @@ const AUDIO_DEVICE_KEY = 'mediapipe.audioDeviceId'
 // ============================================================================
 
 export const runtimeResource = defineResource({
-  dependencies: ['camera', 'loop'],
-  start: ({ camera, loop }: { camera: CameraAPI; loop: LoopAPI }) => {
+  dependencies: ['camera', 'loop', 'detectionWorker', 'frameHistory', 'intentEngine'],
+  start: ({
+    camera,
+    loop,
+    detectionWorker,
+    frameHistory,
+    intentEngine,
+  }: {
+    camera: CameraAPI
+    loop: LoopResource
+    detectionWorker: DetectionWorkerResource
+    frameHistory: FrameHistoryAPI
+    intentEngine: IntentEngineAPI
+  }) => {
     // Create command/event channel
     const channel = createChannel<MediaPipeCommand, MediaPipeEvent>()
 
@@ -84,13 +110,19 @@ export const runtimeResource = defineResource({
       initialized: false,
       running: false,
       paused: false,
-      mirrored: false,
+      mirrored: true, // Default to mirrored (selfie mode, matches loop default)
       debugMode: true,
       gridOverlay: false,
+      gridResolution: 'medium',
+      particlesEnabled: true, // Particles enabled by default
       videoDevices: [],
       audioDevices: [],
       selectedVideoDeviceId: '',
       selectedAudioDeviceId: '',
+      spatial: {
+        latestUpdate: null,
+        lastUpdateTime: 0,
+      },
     })
 
     // Track render task unsubscribers
@@ -196,11 +228,28 @@ export const runtimeResource = defineResource({
         ...handSkeletonTasks,
         // handLandmarkLabelsTask,
         faceLandmarkLabelsTask,
-        smileOverlayTask,
+        // smileOverlayTask,
         blendshapesDisplayTask,
         handCoordinatesTask,
-        // Grid overlay (toggleable with 'g' key)
-        ...(currentState.gridOverlay ? [gridOverlayTask] : []),
+        // Intent Engine tasks
+        createPinchRingsTask(frameHistory),
+        createGestureDurationTask(frameHistory),
+        // Particle system (toggleable with 'p' key)
+        ...(currentState.particlesEnabled
+          ? [createParticlesTask(intentEngine, frameHistory)]
+          : []),
+        // Grid overlay (toggleable with 'g' key) - now multi-resolution
+        ...(currentState.gridOverlay
+          ? [
+            createMultiGridOverlayTask({
+              activeResolution: currentState.gridResolution,
+              showDeadZones: true,
+              showCellLabels: true,
+              showHandPositions: true,
+              spatialData: () => state.get().spatial.latestUpdate,
+            }),
+          ]
+          : []),
         createPauseIndicatorTask(loop.state),
         createFpsTask(loop.state),
       ]
@@ -224,13 +273,31 @@ export const runtimeResource = defineResource({
         // Setup render tasks
         setupRenderTasks()
 
-        // Start the loop
+        // Configure intent engine with v2 particle intents
+        intentEngine.configure([...particleIntentsV2])
+
+        // Subscribe to intent events for debugging
+        // intentEngine.onAny((event: any) => {
+        //   console.log('[Intent Event]', event.type, {
+        //     id: event.id,
+        //     timestamp: event.timestamp,
+        //     position: event.position,
+        //     cell: event.cell,
+        //     hand: event.hand,
+        //     handIndex: event.handIndex,
+        //     reason: event.reason,
+        //     duration: event.duration,
+        //   })
+        // })
+
+        // Start the loop (loop will sync display context after worker initializes)
         loop.start()
 
-        state.mutate((s) => {
-          s.initialized = true
-          s.running = true
-        })
+        state.update(current => ({
+          ...current,
+          initialized: true,
+          running: true,
+        }))
 
         channel.out.notify({ type: mediapipeKeywords.events.started })
       },
@@ -239,10 +306,11 @@ export const runtimeResource = defineResource({
         console.log('[Runtime] Stopping system')
         loop.stop()
 
-        state.mutate((s) => {
-          s.running = false
-          s.paused = false
-        })
+        state.update(current => ({
+          ...current,
+          running: false,
+          paused: false,
+        }))
 
         channel.out.notify({ type: mediapipeKeywords.events.stopped })
       },
@@ -251,9 +319,10 @@ export const runtimeResource = defineResource({
         console.log('[Runtime] Pausing')
         loop.pause()
 
-        state.mutate((s) => {
-          s.paused = true
-        })
+        state.update(current => ({
+          ...current,
+          paused: true,
+        }))
 
         channel.out.notify({ type: mediapipeKeywords.events.paused })
       },
@@ -262,9 +331,10 @@ export const runtimeResource = defineResource({
         console.log('[Runtime] Resuming')
         loop.resume()
 
-        state.mutate((s) => {
-          s.paused = false
-        })
+        state.update(current => ({
+          ...current,
+          paused: false,
+        }))
 
         channel.out.notify({ type: mediapipeKeywords.events.resumed })
       },
@@ -287,8 +357,14 @@ export const runtimeResource = defineResource({
         loop.toggleMirror()
 
         const mirrored = !state.get().mirrored
-        state.mutate((s) => {
-          s.mirrored = mirrored
+        state.set({
+          ...state.get(),
+          mirrored: mirrored,
+        })
+
+        detectionWorker.updateDisplayContext({
+          deadZones: DEAD_ZONE,
+          mirrored: mirrored,
         })
 
         channel.out.notify({
@@ -301,8 +377,15 @@ export const runtimeResource = defineResource({
         console.log('[Runtime] Setting mirrored:', command.mirrored)
         loop.setMirrored(command.mirrored)
 
-        state.mutate((s) => {
-          s.mirrored = command.mirrored
+        state.update(current => ({
+          ...current,
+          mirrored: command.mirrored,
+        }))
+
+        // Sync mirrored state to worker for correct coordinate space calculations
+        detectionWorker.updateDisplayContext({
+          deadZones: DEAD_ZONE,
+          mirrored: command.mirrored,
         })
 
         channel.out.notify({
@@ -314,9 +397,10 @@ export const runtimeResource = defineResource({
       [mediapipeKeywords.commands.setVideoDevice]: async (command) => {
         console.log('[Runtime] Setting video device:', command.deviceId)
 
-        state.mutate((s) => {
-          s.selectedVideoDeviceId = command.deviceId
-        })
+        state.update(current => ({
+          ...current,
+          selectedVideoDeviceId: command.deviceId,
+        }))
 
         localStorage.setItem(VIDEO_DEVICE_KEY, command.deviceId)
         await camera.setDevices({ videoDeviceId: command.deviceId })
@@ -330,9 +414,10 @@ export const runtimeResource = defineResource({
       [mediapipeKeywords.commands.setAudioDevice]: async (command) => {
         console.log('[Runtime] Setting audio device:', command.deviceId)
 
-        state.mutate((s) => {
-          s.selectedAudioDeviceId = command.deviceId || ''
-        })
+        state.update(current => ({
+          ...current,
+          selectedAudioDeviceId: command.deviceId || '',
+        }))
 
         localStorage.setItem(AUDIO_DEVICE_KEY, command.deviceId || '')
         await camera.setDevices({
@@ -350,9 +435,10 @@ export const runtimeResource = defineResource({
         const debugMode = !state.get().debugMode
         console.log('[Runtime] Toggling debug mode:', debugMode)
 
-        state.mutate((s) => {
-          s.debugMode = debugMode
-        })
+        state.update(current => ({
+          ...current,
+          debugMode: debugMode,
+        }))
 
         channel.out.notify({
           type: mediapipeKeywords.events.debugModeToggled,
@@ -364,9 +450,10 @@ export const runtimeResource = defineResource({
         const gridOverlay = !state.get().gridOverlay
         console.log('[Runtime] Toggling grid overlay:', gridOverlay)
 
-        state.mutate((s) => {
-          s.gridOverlay = gridOverlay
-        })
+        state.update(current => ({
+          ...current,
+          gridOverlay: gridOverlay,
+        }))
 
         // Rebuild render tasks to add/remove grid overlay
         setupRenderTasks()
@@ -374,6 +461,28 @@ export const runtimeResource = defineResource({
         channel.out.notify({
           type: mediapipeKeywords.events.gridOverlayToggled,
           enabled: gridOverlay,
+        })
+      },
+
+      [mediapipeKeywords.commands.setGridResolution]: (command) => {
+        console.log('[Runtime] Setting grid resolution:', command.resolution)
+
+        state.mutate((s) => {
+          s.gridResolution = command.resolution
+          s.spatial.latestUpdate = null // Clear stale spatial data
+        })
+
+        // Send to worker to sync grid resolution
+        detectionWorker.dispatch(detectionKeywords.tasks.setGridResolution, {
+          resolution: command.resolution,
+        })
+
+        // Rebuild render tasks with new resolution
+        setupRenderTasks()
+
+        channel.out.notify({
+          type: mediapipeKeywords.events.gridResolutionChanged,
+          resolution: command.resolution,
         })
       },
 
@@ -397,6 +506,22 @@ export const runtimeResource = defineResource({
       [mediapipeKeywords.commands.toggleVideoForeground]: () => {
         console.log('[Runtime] Toggle video foreground')
         loop.toggleRendering('videoForeground')
+      },
+      [mediapipeKeywords.commands.toggleParticles]: () => {
+        console.log('[Runtime] Toggle particles')
+        const particlesEnabled = !state.get().particlesEnabled
+        state.update(current => ({
+          ...current,
+          particlesEnabled,
+        }))
+
+        // Rebuild render tasks to add/remove particle task
+        setupRenderTasks()
+
+        channel.out.notify({
+          type: mediapipeKeywords.events.particlesToggled,
+          particlesEnabled,
+        })
       },
     }
 
@@ -443,6 +568,40 @@ export const runtimeResource = defineResource({
     // ========================================================================
 
     const deviceChangeCleanup = setupDeviceChangeListener()
+
+    // Subscribe to spatial updates from detection worker
+    const unsubscribeSpatialUpdates = detectionWorker.onSpatialUpdate(
+      (spatialUpdate) => {
+        state.mutate((s) => {
+          s.spatial.latestUpdate = spatialUpdate
+          s.spatial.lastUpdateTime = spatialUpdate.timestamp
+        })
+
+        // Emit event for future intent engine integration
+        channel.out.notify({
+          type: mediapipeKeywords.events.spatialUpdate,
+          timestamp: spatialUpdate.timestamp,
+          hands: spatialUpdate.hands,
+        } as any)
+      },
+    )
+
+    // Subscribe to workerReady event from loop
+    // This is the proper time to sync display context to worker
+    const unsubscribeWorkerReady = loop.workerReady$.subscribe(() => {
+      console.log('[Runtime] Worker ready! Syncing display context...')
+
+      // Sync display context now that worker is initialized
+      detectionWorker.updateDisplayContext({
+        deadZones: DEAD_ZONE,
+        mirrored: state.get().mirrored, // Use runtime state
+      })
+
+      // Emit workerReady event for external consumers
+      channel.out.notify({
+        type: mediapipeKeywords.events.workerReady,
+      } as any)
+    })
 
     // ========================================================================
     // API
@@ -496,15 +655,26 @@ export const runtimeResource = defineResource({
           api.dispatch({ type: mediapipeKeywords.commands.toggleDebugMode }),
         toggleGridOverlay: () =>
           api.dispatch({ type: mediapipeKeywords.commands.toggleGridOverlay }),
+        setGridResolution: (resolution: GridResolution | 'all') =>
+          api.dispatch({
+            type: mediapipeKeywords.commands.setGridResolution,
+            resolution,
+          }),
         toggleVideoForeground: () =>
           api.dispatch({
             type: mediapipeKeywords.commands.toggleVideoForeground,
+          }),
+        toggleParticles: () =>
+          api.dispatch({
+            type: mediapipeKeywords.commands.toggleParticles,
           }),
       },
 
       // Cleanup
       cleanup: () => {
         console.log('[Runtime] Cleaning up')
+        unsubscribeSpatialUpdates()
+        unsubscribeWorkerReady()
         unsubscribeWorker()
         deviceChangeCleanup()
         renderTaskUnsubscribers.forEach((unsub) => unsub())

@@ -4,7 +4,6 @@
  * Tests for grid coordinate conversions, spatial hash, and cell operations.
  */
 
-import { describe, expect, it } from 'vitest'
 import {
   cellEuclideanDistance,
   cellManhattanDistance,

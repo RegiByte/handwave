@@ -92,6 +92,32 @@ export const intentKeywords = {
     gesture: 'gesture',
     contact: 'contact',
   },
+
+  // ============================================================================
+  // Grid Resolutions
+  // ============================================================================
+  gridResolutions: {
+    coarse: 'coarse',
+    medium: 'medium',
+    fine: 'fine',
+  },
+
+  // ============================================================================
+  // Recording System
+  // ============================================================================
+  recording: {
+    commands: {
+      startRecording: 'recording/start',
+      stopRecording: 'recording/stop',
+      exportRecording: 'recording/export',
+      clearBuffer: 'recording/clear',
+    },
+    events: {
+      recordingStarted: 'recording/started',
+      recordingStopped: 'recording/stopped',
+      frameRecorded: 'recording/frameRecorded',
+    },
+  },
 } as const
 
 // ============================================================================

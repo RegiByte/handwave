@@ -12,14 +12,18 @@
 import { haltSystem, startSystem } from 'braided'
 import { z } from 'zod'
 import { detectionKeywords } from '@/core/lib/mediapipe/vocabulary/detectionKeywords'
-import type {
-  DetectionBufferLayout} from '@/core/lib/mediapipe/shared/detectionBuffer';
-import {
-  createDetectionBufferViews
-} from '@/core/lib/mediapipe/shared/detectionBuffer'
-import type { WorkerSystem } from '@/core/lib/mediapipe/resources/worker/workerSystem';
+import type { DetectionBufferLayout } from '@/core/lib/mediapipe/shared/detectionBuffer'
+import { createDetectionBufferViews } from '@/core/lib/mediapipe/shared/detectionBuffer'
+import type { WorkerSystem } from '@/core/lib/mediapipe/resources/worker/workerSystem'
 import { createWorkerSystemConfig } from '@/core/lib/mediapipe/resources/worker/workerSystem'
-import { faceLandmarkerConfigSchema, gestureRecognizerConfigSchema, modelPathsSchema } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
+import {
+  displayContextSchema,
+  faceLandmarkerConfigSchema,
+  gestureRecognizerConfigSchema,
+  gridResolutionSchema,
+  handSpatialInfoSchema,
+  modelPathsSchema,
+} from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
 import { defineTask } from '@/core/lib/workerTasks/core'
 
 // ============================================================================
@@ -46,6 +50,10 @@ const commandSchema = z.discriminatedUnion('type', [
     type: z.literal(detectionKeywords.commands.setDetectionSettings),
     detectFace: z.boolean().optional(),
     detectHands: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal(detectionKeywords.commands.setGridResolution),
+    resolution: z.union([gridResolutionSchema, z.literal('all')]),
   }),
 ])
 
@@ -158,6 +166,11 @@ export const startDetectionTask = defineTask({
       type: z.literal('detection'),
       event: eventSchema,
     }),
+    z.object({
+      type: z.literal('spatialUpdate'),
+      timestamp: z.number(),
+      hands: z.array(handSpatialInfoSchema),
+    }),
   ]),
   execute: async (_input, { reportProgress }) => {
     if (!workerSystem) {
@@ -198,6 +211,13 @@ export const startDetectionTask = defineTask({
           reportProgress({
             type: 'detection',
             event: { type: detectionKeywords.events.error, error: event.error },
+          })
+          break
+        case 'spatialUpdate':
+          reportProgress({
+            type: 'spatialUpdate',
+            timestamp: event.timestamp,
+            hands: event.hands,
           })
           break
       }
@@ -325,6 +345,9 @@ export const commandTask = defineTask({
           detectHands: command.detectHands,
         })
         break
+      case detectionKeywords.commands.setGridResolution:
+        workerSystem.workerStore.setGridResolution(command.resolution)
+        break
     }
 
     return Promise.resolve({ dispatched: true })
@@ -422,6 +445,53 @@ export const updateViewportTask = defineTask({
   },
 })
 
+/**
+ * Set grid resolution for spatial tracking
+ * Main thread sends resolution changes to sync with worker
+ */
+export const setGridResolutionTask = defineTask({
+  input: z.object({
+    resolution: z.union([gridResolutionSchema, z.literal('all')]),
+  }),
+  output: z.object({
+    updated: z.boolean(),
+  }),
+  execute: async (input) => {
+    if (!workerSystem) {
+      throw new Error('System not initialized - call initializeWorker first')
+    }
+
+    workerSystem.workerStore.setGridResolution(input.resolution)
+
+    return Promise.resolve({
+      updated: true,
+    })
+  },
+})
+
+/**
+ * Update display context (dead zones, mirrored)
+ * Main thread syncs display state so worker calculates in same coordinate space
+ */
+export const updateDisplayContextTask = defineTask({
+  input: displayContextSchema,
+  output: z.object({
+    updated: z.boolean(),
+  }),
+  execute: async (input) => {
+    if (!workerSystem) {
+      throw new Error('System not initialized - call initializeWorker first')
+    }
+
+    console.log('[SystemTasks] Updating display context:', input)
+    workerSystem.workerStore.setDisplayContext(input)
+
+    return Promise.resolve({
+      updated: true,
+    })
+  },
+})
+
 // ============================================================================
 // Task Registry
 // ============================================================================
@@ -435,6 +505,8 @@ export const systemTasks = {
   [detectionKeywords.tasks.attachSharedBuffer]: attachSharedBufferTask,
   [detectionKeywords.tasks.updateViewport]: updateViewportTask,
   [detectionKeywords.tasks.command]: commandTask,
+  [detectionKeywords.tasks.setGridResolution]: setGridResolutionTask,
+  [detectionKeywords.tasks.updateDisplayContext]: updateDisplayContextTask,
 } as const
 
 export type SystemTasks = typeof systemTasks

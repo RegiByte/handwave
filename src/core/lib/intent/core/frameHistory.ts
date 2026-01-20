@@ -101,10 +101,16 @@ export function checkHeldFor(
   durationMs: number,
   predicate: (frame: FrameSnapshot) => boolean
 ): boolean {
+  if (frames.length === 0) return false
+  const latestTime = frames[frames.length - 1].timestamp
+  const cutoffTime = latestTime - durationMs
   const window = getFramesInWindow(frames, durationMs)
 
   // Need at least some frames in the window
   if (window.length === 0) return false
+
+  // If we don't have frames covering the full duration, treat as not held
+  if (window[0].timestamp > cutoffTime) return false
 
   // Check if all frames in window satisfy predicate
   return window.every(predicate)

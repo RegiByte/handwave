@@ -20,6 +20,8 @@ import type {
   FrameSnapshot,
   GesturePattern,
   GridConfig,
+  GridPresets,
+  GridResolution,
   HysteresisConfig,
   IntentDefinition,
   IntentEngineConfig,
@@ -55,6 +57,8 @@ export type {
   FrameSnapshot,
   IntentDefinition,
   IntentEngineConfig,
+  GridResolution,
+  GridPresets,
 }
 
 // ============================================================================
@@ -152,18 +156,13 @@ export type FrameProcessingResult = {
 /**
  * Check if pattern is a gesture pattern
  */
-export function isGesturePattern(
-  pattern: Pattern
-): pattern is GesturePattern {
+export function isGesturePattern(pattern: Pattern): pattern is GesturePattern {
   return pattern.type === 'gesture'
 }
 
 /**
  * Check if pattern is a contact pattern
  */
-export function isContactPattern(
-  pattern: Pattern
-): pattern is ContactPattern {
+export function isContactPattern(pattern: Pattern): pattern is ContactPattern {
   return pattern.type === 'contact'
 }
-

@@ -133,3 +133,80 @@ export const modelPathsSchema = z.object({
 })
 
 export type ModelPaths = z.infer<typeof modelPathsSchema>
+
+// ============================================================================
+// Spatial Schemas
+// ============================================================================
+
+/**
+ * Cell coordinates for grid-based spatial tracking
+ */
+export const cellSchema = z.object({
+  col: z.number().int().nonnegative(),
+  row: z.number().int().nonnegative(),
+})
+
+export type Cell = z.infer<typeof cellSchema>
+
+/**
+ * Grid resolution type
+ */
+export const gridResolutionSchema = z.enum(['coarse', 'medium', 'fine'])
+
+export type GridResolution = z.infer<typeof gridResolutionSchema>
+
+/**
+ * Hand spatial information for a single hand
+ * Contains minimal data - main thread reads full data from SharedArrayBuffer
+ */
+export const handSpatialInfoSchema = z.object({
+  handIndex: z.number().int().min(0).max(3), // Index in SharedArrayBuffer (0-3)
+  landmarkIndex: z.number().int().min(0).max(20), // Which landmark we're tracking (8 = index finger tip)
+  cells: z.object({
+    coarse: cellSchema,
+    medium: cellSchema,
+    fine: cellSchema,
+  }),
+})
+
+export type HandSpatialInfo = z.infer<typeof handSpatialInfoSchema>
+
+/**
+ * Spatial update message from worker
+ * Sent every frame with hand spatial positions
+ */
+export const spatialUpdateMessageSchema = z.object({
+  type: z.literal('spatialUpdate'),
+  timestamp: z.number(),
+  hands: z.array(handSpatialInfoSchema),
+})
+
+export type SpatialUpdateMessage = z.infer<typeof spatialUpdateMessageSchema>
+
+// ============================================================================
+// Display Context Schemas
+// ============================================================================
+
+/**
+ * Dead zone configuration
+ * Percentages of viewport to exclude from spatial tracking
+ */
+export const deadZonesSchema = z.object({
+  top: z.number().min(0).max(1),    // e.g., 0.05 = 5%
+  bottom: z.number().min(0).max(1), // e.g., 0.15 = 15%
+  left: z.number().min(0).max(1),   // e.g., 0.05 = 5%
+  right: z.number().min(0).max(1),  // e.g., 0.05 = 5%
+})
+
+export type DeadZones = z.infer<typeof deadZonesSchema>
+
+/**
+ * Display context for worker
+ * Contains display-related state needed for correct spatial calculations
+ */
+export const displayContextSchema = z.object({
+  deadZones: deadZonesSchema,
+  mirrored: z.boolean(),
+})
+
+export type DisplayContext = z.infer<typeof displayContextSchema>

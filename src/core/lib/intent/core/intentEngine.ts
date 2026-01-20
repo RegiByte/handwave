@@ -24,9 +24,105 @@ import type {
   IntentEngineConfig,
   IntentEvent,
   Pattern,
+  Position,
+  Vector3,
 } from './types'
+import {
+  createActionContext,
+  determineEndReason,
+  generateActionId,
+  shouldStartAction,
+  updateAction,
+} from './actionTracker'
+import { calculateVelocity } from './frameHistory'
 import { matchesContact } from '@/core/lib/intent/matching/contactDetector'
 import { matchesGesture } from '@/core/lib/intent/matching/gestureMatcher'
+import { normalizedToCell } from '@/core/lib/intent/spatial/grid'
+import { intentKeywords } from '@/core/lib/intent/vocabulary'
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Extract matched hand information from frame based on pattern
+ *
+ * @param frame - Frame to extract from
+ * @param pattern - Pattern that matched
+ * @returns Hand info or null if not found
+ */
+function extractMatchedHand(
+  frame: FrameSnapshot,
+  pattern: Pattern
+): { hand: 'left' | 'right'; handIndex: number; landmarks: Array<Vector3> } | null {
+  const gestureResult = frame.gestureResult
+  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+    return null
+  }
+
+  // Find matching hand
+  const matchingHand = gestureResult.hands.find((h) => {
+    const handedness = h.handedness.toLowerCase() as 'left' | 'right'
+    
+    // Check handedness matches
+    if (handedness !== pattern.hand) {
+      return false
+    }
+
+    // If handIndex specified in pattern, match ONLY that specific hand instance
+    if (pattern.handIndex !== undefined && h.handIndex !== pattern.handIndex) {
+      return false
+    }
+
+    // Verify pattern actually matches this hand
+    // Create a temporary frame with just this hand for matching
+    const singleHandFrame: FrameSnapshot = {
+      ...frame,
+      gestureResult: {
+        hands: [h]
+      }
+    }
+
+    return matchPattern(singleHandFrame, pattern)
+  })
+
+  if (!matchingHand) {
+    return null
+  }
+
+  return {
+    hand: matchingHand.handedness.toLowerCase() as 'left' | 'right',
+    handIndex: matchingHand.handIndex,
+    landmarks: matchingHand.landmarks
+  }
+}
+
+/**
+ * Calculate center of mass from landmarks
+ *
+ * @param landmarks - Hand landmarks
+ * @returns Center position
+ */
+function calculateCenterOfMass(landmarks: Array<Vector3>): Position {
+  if (landmarks.length === 0) {
+    return { x: 0, y: 0, z: 0 }
+  }
+
+  const sum = landmarks.reduce(
+    (acc, lm) => ({
+      x: acc.x + lm.x,
+      y: acc.y + lm.y,
+      z: acc.z + lm.z,
+    }),
+    { x: 0, y: 0, z: 0 }
+  )
+
+  return {
+    x: sum.x / landmarks.length,
+    y: sum.y / landmarks.length,
+    z: sum.z / landmarks.length,
+  }
+}
 
 // ============================================================================
 // Frame Processing (Pure Function)
@@ -55,17 +151,174 @@ export function processFrame(
   activeActions: Map<string, ActiveAction>,
   config: IntentEngineConfig
 ): FrameProcessingResult {
-  // TODO: Implement in Phase 3
-  // 1. Check each intent for start conditions
-  // 2. Update existing active actions
-  // 3. Check for action endings
-  // 4. Generate events (start/update/end)
-  // 5. Return events and updated action map
+  const eventsToEmit: Array<IntentEvent> = []
+  const updatedActions = new Map(activeActions)
 
-  return {
-    eventsToEmit: [],
-    updatedActions: new Map(activeActions),
+  // Get grid config (use default if not specified)
+  const gridConfig = config.spatial?.grid || { cols: 8, rows: 6 }
+
+  // 1. Update existing active actions
+  for (const [actionId, action] of Array.from(updatedActions.entries())) {
+    const intent = intents.find(i => i.id === action.intentId)
+    if (!intent) {
+      // Intent no longer exists, remove action
+      updatedActions.delete(actionId)
+      continue
+    }
+
+    const actionMatches = matchesIntent(intent, frame, history, config)
+    const withinMaxGap =
+      action.state === intentKeywords.actionStates.active &&
+      !!intent.temporal?.maxGap &&
+      frame.timestamp - action.lastUpdateTime <= intent.temporal.maxGap
+
+    if (actionMatches) {
+      // Continue action - update context
+      const handInfo = extractMatchedHand(frame, intent.action)
+      if (!handInfo) {
+        if (action.state === intentKeywords.actionStates.pending) {
+          updatedActions.delete(actionId)
+          continue
+        }
+
+        const reason = determineEndReason(action, intent, frame)
+        eventsToEmit.push(generateEndEvent(intent, action, reason))
+        updatedActions.delete(actionId)
+        continue
+      }
+
+      const position = calculateCenterOfMass(handInfo.landmarks)
+      const cell = normalizedToCell(position, gridConfig)
+
+      const previousFrame = history.length >= 2 ? history[history.length - 2] : null
+      let velocity: Vector3 = { x: 0, y: 0, z: 0 }
+
+      if (previousFrame) {
+        const vel = calculateVelocity(
+          frame,
+          previousFrame,
+          (f) => {
+            const prevHandInfo = extractMatchedHand(f, intent.action)
+            return prevHandInfo ? calculateCenterOfMass(prevHandInfo.landmarks) : null
+          }
+        )
+        if (vel) velocity = vel
+      }
+
+      const context = createActionContext(
+        action,
+        frame,
+        position,
+        cell,
+        velocity
+      )
+
+      const updatedAction = updateAction(action, context)
+
+      if (
+        updatedAction.state === intentKeywords.actionStates.pending &&
+        intent.temporal?.minDuration !== undefined &&
+        frame.timestamp - updatedAction.startTime >= intent.temporal.minDuration
+      ) {
+        const activatedAction = {
+          ...updatedAction,
+          state: intentKeywords.actionStates.active as ActiveAction['state'],
+        }
+        updatedActions.set(actionId, activatedAction)
+        eventsToEmit.push(generateStartEvent(intent, activatedAction))
+        continue
+      }
+
+      updatedActions.set(actionId, updatedAction)
+
+      if (updatedAction.state === intentKeywords.actionStates.active) {
+        eventsToEmit.push(generateUpdateEvent(intent, updatedAction))
+      }
+      continue
+    }
+
+    if (withinMaxGap) {
+      updatedActions.set(actionId, action)
+      continue
+    }
+
+    if (action.state === intentKeywords.actionStates.pending) {
+      updatedActions.delete(actionId)
+      continue
+    }
+
+    const reason = determineEndReason(action, intent, frame)
+    eventsToEmit.push(generateEndEvent(intent, action, reason))
+    updatedActions.delete(actionId)
   }
+
+  // 2. Check for new intent matches
+  for (const intent of intents) {
+    // Skip if already active
+    if (isIntentActive(intent.id, updatedActions)) continue
+
+    const matchedNow = matchesIntent(intent, frame, history, config)
+    if (!matchedNow) continue
+
+    const usesMinDuration = intent.temporal?.minDuration !== undefined
+
+    if (usesMinDuration || shouldStartAction(intent, frame, history)) {
+      // Extract hand info from action pattern
+      const handInfo = extractMatchedHand(frame, intent.action)
+      if (!handInfo) continue // Shouldn't happen, but safety check
+
+      // Calculate position (center of mass)
+      const position = calculateCenterOfMass(handInfo.landmarks)
+      
+      // Calculate cell
+      const cell = normalizedToCell(position, gridConfig)
+      
+      // Initial velocity is zero
+      const velocity: Vector3 = { x: 0, y: 0, z: 0 }
+
+      // Generate action ID
+      const actionId = generateActionId(
+        intent.id,
+        handInfo.hand,
+        handInfo.handIndex,
+        frame.timestamp
+      )
+
+      // Create action context
+      const context = {
+        actionId,
+        intentId: intent.id,
+        hand: handInfo.hand,
+        handIndex: handInfo.handIndex,
+        position,
+        cell,
+        velocity,
+        timestamp: frame.timestamp,
+        duration: 0,
+      }
+
+      // Create new action
+      const newAction: ActiveAction = {
+        id: actionId,
+        intentId: intent.id,
+        state: usesMinDuration
+          ? (intentKeywords.actionStates.pending as ActiveAction['state'])
+          : (intentKeywords.actionStates.active as ActiveAction['state']),
+        startTime: frame.timestamp,
+        lastUpdateTime: frame.timestamp,
+        context,
+      }
+
+      updatedActions.set(actionId, newAction)
+
+      if (!usesMinDuration) {
+        // Emit start event immediately
+        eventsToEmit.push(generateStartEvent(intent, newAction))
+      }
+    }
+  }
+
+  return { eventsToEmit, updatedActions }
 }
 
 // ============================================================================
@@ -84,22 +337,21 @@ export function processFrame(
 export function matchesIntent(
   intent: Intent,
   frame: FrameSnapshot,
-  history: Array<FrameSnapshot>,
-  config: IntentEngineConfig
+  _history: Array<FrameSnapshot>,
+  _config: IntentEngineConfig
 ): boolean {
-  // TODO: Implement in Phase 3
-  // 1. Check modifier pattern (if present) using matchPattern()
+  // 1. Check modifier pattern (if present)
   if (intent.modifier && !matchPattern(frame, intent.modifier)) {
     return false
   }
 
-  // 2. Check action pattern using matchPattern()
+  // 2. Check action pattern
   if (!matchPattern(frame, intent.action)) {
     return false
   }
 
-  // 3. Check temporal constraints
-  // TODO: Implement temporal constraint checking
+  // Note: Temporal constraints (minDuration) are checked in shouldStartAction
+  // This function only checks if patterns match in the current frame
 
   return true
 }
@@ -119,7 +371,7 @@ function matchPattern(frame: FrameSnapshot, pattern: Pattern): boolean {
       return matchesContact(frame, pattern)
     default: {
       // Exhaustiveness check - TypeScript will error if we miss a case
-      const _exhaustive: never = pattern
+     
       return false
     }
   }

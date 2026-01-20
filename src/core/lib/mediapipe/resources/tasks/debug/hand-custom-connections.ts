@@ -468,6 +468,6 @@ export const palmHighlightTask: RenderTask = ({
 
 export const handSkeletonTasks = [
   fingertipsConnectorsTask,
-  handSkeletonTask,
   palmHighlightTask,
+  handSkeletonTask,
 ]

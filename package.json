@@ -6,10 +6,11 @@
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.ts",
     "lint": "eslint",
     "format": "prettier",
-    "check": "prettier --write . && eslint --fix"
+    "check": "prettier --write . && eslint --fix",
+    "type:check": "tsc --noEmit"
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",
@@ -58,6 +59,7 @@
     "eslint-plugin-no-relative-import-paths": "^1.6.1",
     "jsdom": "^27.0.0",
     "prettier": "^3.5.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vitest": "^4.0.17",

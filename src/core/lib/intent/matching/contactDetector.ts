@@ -53,15 +53,54 @@ export function matchesContact(
     return false
   }
 
-  // TODO: Implement in Phase 1
-  // TypeScript now knows pattern is ContactPattern
-  // 1. Extract gesture result from frame
-  // 2. Find hand by handedness (left/right) and optionally handIndex
-  // 3. If handIndex specified, match ONLY that hand instance
-  // 4. If handIndex not specified, match ANY hand of that handedness
-  // 5. Get landmarks for thumb and specified fingers (pattern.fingers)
-  // 6. Calculate distances
-  // 7. Check if any distance is below pattern.threshold
+  // Extract gesture result from frame
+  const gestureResult = frame.gestureResult
+  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+    return false
+  }
+
+  // Find matching hand(s)
+  const matchingHands = gestureResult.hands.filter((hand: any) => {
+    // Normalize handedness (MediaPipe uses 'Left'/'Right', we use 'left'/'right')
+    const handedness = hand.handedness?.toLowerCase() as 'left' | 'right'
+    
+    // Check handedness matches
+    if (handedness !== pattern.hand) {
+      return false
+    }
+
+    // If handIndex specified, match ONLY that specific hand instance
+    if (pattern.handIndex !== undefined && hand.handIndex !== pattern.handIndex) {
+      return false
+    }
+
+    return true
+  })
+
+  // No matching hands found
+  if (matchingHands.length === 0) {
+    return false
+  }
+
+  // Check contact for each matching hand
+  const threshold = pattern.threshold ?? 0.07 // Default conservative threshold
+  
+  for (const hand of matchingHands) {
+    const landmarks = hand.landmarks
+    if (!landmarks || landmarks.length < 21) {
+      continue
+    }
+
+    // Check if any of the specified fingers are in contact with thumb
+    const hasContact = pattern.fingers.some((finger) => {
+      return detectPinch(landmarks, finger, threshold)
+    })
+
+    if (hasContact) {
+      return true
+    }
+  }
+
   return false
 }
 
@@ -74,7 +113,7 @@ export function matchesContact(
  * @returns True if pinching
  */
 export function detectPinch(
-  landmarks: Array<Vector3>,
+  landmarks: ReadonlyArray<Vector3>,
   finger: keyof typeof FINGERTIP_INDICES,
   threshold: number
 ): boolean {
@@ -100,8 +139,8 @@ export function detectPinch(
  * @returns True if any finger is in contact
  */
 export function detectMultiFingerContact(
-  landmarks: Array<Vector3>,
-  fingers: Array<keyof typeof FINGERTIP_INDICES>,
+  landmarks: ReadonlyArray<Vector3>,
+  fingers: ReadonlyArray<keyof typeof FINGERTIP_INDICES>,
   threshold: number
 ): boolean {
   return fingers.some((finger) => detectPinch(landmarks, finger, threshold))
@@ -152,7 +191,7 @@ export function calculateDistance2D(a: Vector3, b: Vector3): number {
  * @returns Landmark or null if invalid
  */
 export function getLandmarkForFinger(
-  landmarks: Array<Vector3>,
+  landmarks: ReadonlyArray<Vector3>,
   finger: keyof typeof FINGERTIP_INDICES
 ): Vector3 | null {
   if (landmarks.length < 21) return null
@@ -174,9 +213,23 @@ export function getLandmarksForHand(
   hand: 'left' | 'right',
   handIndex: number
 ): Array<Vector3> | null {
-  // TODO: Implement in Phase 1
-  // Extract landmarks from MediaPipe gesture result for specific hand instance
-  return null
+  const gestureResult = frame.gestureResult
+  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+    return null
+  }
+
+  // Find the specific hand instance
+  const matchingHand = gestureResult.hands.find((h: any) => {
+    const handedness = h.handedness?.toLowerCase() as 'left' | 'right'
+    return handedness === hand && h.handIndex === handIndex
+  })
+
+  if (!matchingHand || !matchingHand.landmarks) {
+    return null
+  }
+
+  // Return landmarks (already in Vector3 format: {x, y, z})
+  return matchingHand.landmarks
 }
 
 // ============================================================================
@@ -189,7 +242,7 @@ export function getLandmarksForHand(
  * @param landmarks - Landmarks to validate
  * @returns True if valid (has 21 landmarks)
  */
-export function areValidLandmarks(landmarks: Array<Vector3>): boolean {
+export function areValidLandmarks(landmarks: ReadonlyArray<Vector3>): boolean {
   return landmarks.length === 21
 }
 
@@ -200,7 +253,7 @@ export function areValidLandmarks(landmarks: Array<Vector3>): boolean {
  * @returns Object with fingertip positions
  */
 export function getFingertips(
-  landmarks: Array<Vector3>
+  landmarks: ReadonlyArray<Vector3>
 ): Record<string, Vector3> | null {
   if (!areValidLandmarks(landmarks)) return null
 

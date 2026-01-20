@@ -11,3 +11,6 @@ export * from './keywords'
 // Schemas
 export * from './schemas'
 
+// Recording Schemas
+export * from './recordingSchemas'
+

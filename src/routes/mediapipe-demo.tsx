@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Suspense, useEffect, useRef } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { useAtomState } from '@/core/lib/state'
@@ -7,6 +7,7 @@ import {
   useMediapipeResource,
   useMediapipeStatus,
 } from '@/core/lib/mediapipe/system'
+import { downloadRecording } from '@/core/lib/intent/testing/recordingUtils'
 
 export const Route = createFileRoute('/mediapipe-demo')({
   component: MediaPipeDemoPage,
@@ -119,12 +120,28 @@ function MediaPipeCanvas() {
   // Get resources from the system (suspends until ready)
   const runtime = useMediapipeResource('runtime')
   const canvas = useMediapipeResource('canvas')
+  const recording = useMediapipeResource('recording')
 
   // Mount canvas into container with auto-resize enabled
   canvas.useContainer(containerRef, { autoResize: true })
 
   // Subscribe to runtime state for display
   const runtimeState = useAtomState(runtime.state)
+
+  // Recording state
+  const [isRecording, setIsRecording] = useState(false)
+  const [frameCount, setFrameCount] = useState(0)
+
+  // Poll frame count during recording
+  useEffect(() => {
+    if (!isRecording) return
+
+    const interval = setInterval(() => {
+      setFrameCount(recording.getFrameCount())
+    }, 100)
+
+    return () => clearInterval(interval)
+  }, [isRecording, recording])
 
   // Start the system on mount
   useEffect(() => {
@@ -147,6 +164,22 @@ function MediaPipeCanvas() {
   ) => {
     const deviceId = event.target.value
     runtime.commands.setAudioDevice(deviceId || null, Boolean(deviceId))
+  }
+
+  const handleStartRecording = () => {
+    const description = prompt('Recording description (optional):')
+    recording.startRecording(description || undefined)
+    setIsRecording(true)
+    setFrameCount(0)
+  }
+
+  const handleStopAndExport = () => {
+    const session = recording.stopRecording()
+    setIsRecording(false)
+    setFrameCount(0)
+
+    // Download JSON
+    downloadRecording(session)
   }
 
   return (
@@ -239,6 +272,87 @@ function MediaPipeCanvas() {
           >
             {runtimeState.mirrored ? '🪞 Mirror ON' : '🪞 Mirror OFF'}
           </button>
+
+          {/* Recording Controls */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              marginLeft: 8,
+              paddingLeft: 12,
+              borderLeft: '1px solid #333',
+            }}
+          >
+            {!isRecording ? (
+              <button
+                onClick={handleStartRecording}
+                style={{
+                  background: 'rgba(255, 59, 59, 0.2)',
+                  border: '1px solid #FF3B3B',
+                  borderRadius: 4,
+                  padding: '4px 12px',
+                  color: '#FF3B3B',
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: '#FF3B3B',
+                  }}
+                />
+                Record
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleStopAndExport}
+                  style={{
+                    background: 'rgba(0, 255, 136, 0.2)',
+                    border: '1px solid #00FF88',
+                    borderRadius: 4,
+                    padding: '4px 12px',
+                    color: '#00FF88',
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 2,
+                      background: '#00FF88',
+                    }}
+                  />
+                  Stop & Export
+                </button>
+                <span
+                  style={{
+                    color: '#888',
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  }}
+                >
+                  {frameCount} frames
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         <div

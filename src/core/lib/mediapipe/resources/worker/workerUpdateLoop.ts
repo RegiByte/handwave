@@ -14,6 +14,7 @@ import { defineResource } from 'braided'
 import type { WorkerDetectorsResource } from './workerDetectors'
 import type { WorkerStoreResource } from './workerStore'
 import type { FrameRaterAPI } from '@/core/lib/mediapipe/resources/frameRater'
+import type { HandSpatialInfo } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
 import { createSubscription } from '@/core/lib/state'
 
 // ============================================================================
@@ -26,6 +27,7 @@ export type LoopEvent =
   | { type: 'paused' }
   | { type: 'resumed' }
   | { type: 'error'; error: string }
+  | { type: 'spatialUpdate'; timestamp: number; hands: Array<HandSpatialInfo> }
 
 // ============================================================================
 // Resource Definition
@@ -90,7 +92,16 @@ export const workerUpdateLoop = defineResource({
           const currentFPS = detectionRater.getFPS()
           
           // Run detection and pass FPS to be written to SharedArrayBuffer
-          workerDetectors.detectFromLatestFrame(currentFPS)
+          const spatialData = workerDetectors.detectFromLatestFrame(currentFPS)
+          
+          // Emit spatial update event if we have data
+          if (spatialData) {
+            eventSubscription.notify({
+              type: 'spatialUpdate',
+              timestamp,
+              hands: spatialData,
+            })
+          }
           
           // Record frame for FPS tracking
           detectionRater.recordFrame(deltaMs)
