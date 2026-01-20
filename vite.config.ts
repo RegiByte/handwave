@@ -1,11 +1,10 @@
 import { defineConfig } from 'vite'
 import { devtools } from '@tanstack/devtools-vite'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
-import { cloudflare } from '@cloudflare/vite-plugin'
 import path from 'node:path'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
 const config = defineConfig({
   resolve: {
@@ -14,26 +13,32 @@ const config = defineConfig({
     },
   },
   plugins: [
-    cloudflare({ viteEnvironment: { name: 'ssr' } }),
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+      verboseFileRoutes: true,
+    }),
     devtools(),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
       projects: ['./tsconfig.json'],
     }),
     tailwindcss(),
-    tanstackStart({
-      spa: {
-        enabled: true,
-      },
-      prerender: {
-        enabled: false
-      }
-
-    }),
     viteReact(),
   ],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    sourcemap: true,
+  },
   worker: {
     format: 'iife', // Use classic worker format for MediaPipe compatibility
+    rollupOptions: {
+      output: {
+        // Ensure worker chunks have proper names and are inlined if needed
+        inlineDynamicImports: false,
+      },
+    },
   },
   server: {
     headers: {
@@ -44,9 +49,11 @@ const config = defineConfig({
   },
   preview: {
     headers: {
-      // Required for SharedArrayBuffer support
+      // Required for SharedArrayBuffer support in all contexts
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
+      // Allow cross-origin resource loading for workers
+      'Cross-Origin-Resource-Policy': 'cross-origin',
     },
   },
 })

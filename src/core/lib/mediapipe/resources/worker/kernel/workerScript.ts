@@ -16,30 +16,56 @@ import { startSystem } from 'braided'
 import { systemTasks } from './systemTasks'
 import { createWorkerSystem } from '@/core/lib/workerTasks/worker'
 
-// Create the worker system with system tasks only
-export const detectionWorkerSystem = createWorkerSystem(systemTasks)
+console.log('[Detection Worker] 🚀 Worker script loaded and executing...')
 
-console.log('[Detection Worker] Starting worker system...')
+try {
+  // Create the worker system with system tasks only
+  const detectionWorkerSystem = createWorkerSystem(systemTasks)
 
-startSystem(detectionWorkerSystem)
-  .then(({ system, errors }) => {
-    if (errors.size > 0) {
-      console.error('❌ [Detection Worker] System started with errors:')
-      errors.forEach((error, resourceId) => {
-        console.error(`  - ${resourceId}:`, error)
-      })
+  console.log('[Detection Worker] Starting worker system...')
 
-      system.workerTransport.notifyError(
-        `System started with ${errors.size} error(s)`,
-        'detectionWorkerSetup',
-        'detectionWorkerSetup',
-      )
-      return
-    }
+  startSystem(detectionWorkerSystem)
+    .then(({ system, errors }) => {
+      if (errors.size > 0) {
+        console.error('❌ [Detection Worker] System started with errors:')
+        errors.forEach((error, resourceId) => {
+          console.error(`  - ${resourceId}:`, error)
+        })
 
-    console.log('✅ [Detection Worker] Worker system ready')
-    system.workerTransport.notifyReady()
-  })
-  .catch((error) => {
-    console.error('❌ [Detection Worker] System failed to start:', error)
-  })
+        system.workerTransport.notifyError(
+          `System started with ${errors.size} error(s)`,
+          'detectionWorkerSetup',
+          'detectionWorkerSetup',
+        )
+        return
+      }
+
+      console.log('✅ [Detection Worker] Worker system ready')
+      system.workerTransport.notifyReady()
+    })
+    .catch((error) => {
+      console.error('❌ [Detection Worker] System failed to start:', error)
+      console.error('❌ [Detection Worker] Error stack:', error?.stack)
+      // Try to send error to main thread
+      try {
+        self.postMessage({
+          type: 'worker/error',
+          error: String(error),
+          stack: error?.stack,
+        })
+      } catch (postError) {
+        console.error('❌ [Detection Worker] Failed to post error:', postError)
+      }
+    })
+} catch (error) {
+  console.error('❌ [Detection Worker] Synchronous error during load:', error)
+  try {
+    self.postMessage({
+      type: 'worker/error',
+      error: String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+  } catch (postError) {
+    console.error('❌ [Detection Worker] Failed to post error:', postError)
+  }
+}

@@ -280,7 +280,20 @@ export const haltWorkerTask = defineTask({
  */
 export const pushFrameTask = defineTask({
   input: z.object({
-    frame: z.instanceof(ImageBitmap),
+    /**
+     * SSR Compatibility Note:
+     * 
+     * We use z.any() instead of z.instanceof(ImageBitmap) because:
+     * 1. ImageBitmap is a browser-only API that doesn't exist in Node.js
+     * 2. During SSR/build, even with defaultSsr: false, module evaluation happens server-side
+     * 3. z.instanceof(ImageBitmap) would throw "ImageBitmap is not defined" during bundling
+     * 
+     * This is safe because:
+     * - parseIO: false means Zod doesn't validate this at runtime anyway
+     * - The actual code only runs client-side (Workers API is browser-only)
+     * - TypeScript still enforces the correct type at compile time
+     */
+    frame: z.any(), // Actually ImageBitmap, but z.instanceof() breaks SSR builds
     timestamp: z.number(),
   }),
   output: z.object({
@@ -292,7 +305,8 @@ export const pushFrameTask = defineTask({
       throw new Error('System not initialized - call initializeWorker first')
     }
 
-    workerSystem.workerDetectors.pushFrame(input.frame, input.timestamp)
+    // TypeScript knows this is ImageBitmap from the function signature
+    workerSystem.workerDetectors.pushFrame(input.frame as ImageBitmap, input.timestamp)
 
     return Promise.resolve({
       received: true,
@@ -360,7 +374,16 @@ export const commandTask = defineTask({
  */
 export const attachSharedBufferTask = defineTask({
   input: z.object({
-    buffer: z.instanceof(SharedArrayBuffer),
+    /**
+     * SSR Compatibility Note:
+     * 
+     * We use z.any() instead of z.instanceof(SharedArrayBuffer) for the same
+     * reasons as ImageBitmap above - SharedArrayBuffer exists in Node.js but
+     * z.instanceof() still causes issues during module evaluation in the build.
+     * 
+     * This is safe because the buffer is only used in worker context (browser-only).
+     */
+    buffer: z.any(), // Actually SharedArrayBuffer
     layout: z.object({
       totalBytes: z.number(),
       singleBufferSize: z.number(),

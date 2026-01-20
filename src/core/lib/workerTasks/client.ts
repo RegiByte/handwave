@@ -116,11 +116,19 @@ export function createClientResource<TTasks extends TaskRegistry>(
           }))
 
           const WorkerModule = await workerImport()
+          console.log('[Client] Worker module:', WorkerModule)
           worker = new WorkerModule.default()
 
           worker.onmessage = handleWorkerMessage
           worker.onerror = (error: ErrorEvent) => {
-            console.error('[Client] Worker error:', error.message)
+            console.error('[Client] Worker error:', error)
+            console.error('[Client] Worker error details:', {
+              message: error.message,
+              filename: error.filename,
+              lineno: error.lineno,
+              colno: error.colno,
+              error: error.error,
+            })
             clientState.update((state) => ({
               ...state,
               status: clientStatusKeywords.error,
