@@ -17,9 +17,9 @@ import {
   createTestFixture,
   filterFrames,
   loadRecording,
-} from '@/core/lib/intent/testing/recordingUtils'
-import type { RecordedFrame } from '@/core/lib/intent/vocabulary/recordingSchemas'
-import { calculateDistance3D } from '@/core/lib/intent'
+} from '../packages/demo/src/core/lib/intent/testing/recordingUtils'
+import type { RecordedFrame } from '@handwave/intent-engine'
+import { calculateDistance3D } from '../packages/demo/src/core/lib/intent/index'
 
 // ============================================================================
 // Fixture Extraction

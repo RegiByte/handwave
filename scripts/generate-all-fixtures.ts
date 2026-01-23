@@ -29,7 +29,12 @@ interface RecordedFrame {
       gesture: string
       gestureScore: number
       landmarks: Array<{ x: number; y: number; z: number }>
+      worldLandmarks?: Array<{ x: number; y: number; z: number }>
     }>
+  }
+  performance?: {
+    workerFPS: number
+    mainFPS: number
   }
 }
 
@@ -56,7 +61,7 @@ interface FixtureCandidate {
 // ============================================================================
 
 const RECORDINGS_DIR = path.join(process.cwd(), 'recordings')
-const FIXTURES_DIR = path.join(process.cwd(), 'src/core/lib/intent/__fixtures__')
+const FIXTURES_DIR = path.join(process.cwd(), 'packages/demo/src/core/lib/intent/__fixtures__')
 
 const GESTURE_TYPES = ['Victory', 'Closed_Fist', 'Open_Palm', 'Thumb_Up', 'Thumb_Down', 'None']
 const FINGER_TYPES = ['index', 'middle', 'ring', 'pinky']
@@ -83,6 +88,52 @@ function calculateDistance3D(a: { x: number; y: number; z: number }, b: { x: num
 
 function normalizeHandedness(handedness: string): 'left' | 'right' {
   return handedness.toLowerCase() as 'left' | 'right'
+}
+
+/**
+ * Round a number to a specific number of decimal places
+ * This prevents excessive precision that causes JS precision loss errors
+ */
+function roundToPrecision(num: number, decimals: number = 8): number {
+  const factor = Math.pow(10, decimals)
+  return Math.round(num * factor) / factor
+}
+
+/**
+ * Deep clone and round all numeric values in an object
+ * This ensures fixture data has reasonable precision
+ */
+function roundFramePrecision(frame: RecordedFrame): RecordedFrame {
+  return {
+    ...frame,
+    timestamp: roundToPrecision(frame.timestamp, 3), // milliseconds - 3 decimals enough
+    gestureResult: {
+      hands: frame.gestureResult.hands.map(hand => ({
+        ...hand,
+        gestureScore: roundToPrecision(hand.gestureScore, 4), // confidence - 4 decimals
+        landmarks: hand.landmarks.map(lm => ({
+          x: roundToPrecision(lm.x, 8), // coordinates - 8 decimals (more precision)
+          y: roundToPrecision(lm.y, 8),
+          z: roundToPrecision(lm.z, 8),
+        })),
+        // Round worldLandmarks if they exist
+        ...(hand.worldLandmarks && {
+          worldLandmarks: hand.worldLandmarks.map(wlm => ({
+            x: roundToPrecision(wlm.x, 8), // world coordinates - 8 decimals
+            y: roundToPrecision(wlm.y, 8),
+            z: roundToPrecision(wlm.z, 8),
+          })),
+        }),
+      })),
+    },
+    // Round performance metrics if they exist
+    ...(frame.performance && {
+      performance: {
+        workerFPS: Math.round(frame.performance.workerFPS), // FPS - integers only
+        mainFPS: Math.round(frame.performance.mainFPS),     // FPS - integers only
+      },
+    }),
+  }
 }
 
 // ============================================================================
@@ -311,6 +362,9 @@ function extractContactFixtures(recording: Recording, recordingPath: string): Ar
 function generateFixtureFile(candidate: FixtureCandidate): string {
   const { name, type, frames, source } = candidate
 
+  // Round all numeric values to prevent precision loss errors
+  const roundedFrames = frames.map(roundFramePrecision)
+
   const header = `// Generated from: ${source}
 // Type: ${type}
 // Score: ${candidate.score.toFixed(3)} (${candidate.reason})
@@ -319,8 +373,8 @@ export const ${toCamelCase(name)}Frames = ${JSON.stringify({
     name: `${toCamelCase(name)}Frames`,
     description: candidate.gesture || `${candidate.finger} pinch`,
     source,
-    frameCount: frames.length,
-    frames,
+    frameCount: roundedFrames.length,
+    frames: roundedFrames,
   }, null, 2)} as const
 `
 

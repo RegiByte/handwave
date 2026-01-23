@@ -2,6 +2,10 @@
   "name": "handwave",
   "private": true,
   "type": "module",
+  "packageManager": "npm@10.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
@@ -11,7 +15,7 @@
     "lint": "eslint",
     "format": "prettier",
     "check": "prettier --write . && eslint --fix",
-    "type:check": "tsc --noEmit"
+    "type:check": "turbo type:check"
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",
@@ -58,6 +62,7 @@
     "jsdom": "^27.0.0",
     "prettier": "^3.5.3",
     "tsx": "^4.21.0",
+    "turbo": "^2.7.5",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vitest": "^4.0.17",

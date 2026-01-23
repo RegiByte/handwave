@@ -1,0 +1,4 @@
+
+> @handwave/intent-engine@0.1.0 type:check
+> tsc --noEmit
+

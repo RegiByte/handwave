@@ -1,8 +1,8 @@
 //  @ts-check
 
 import { tanstackConfig } from '@tanstack/eslint-config'
-import { defineConfig, globalIgnores } from 'eslint/config'
 import noRelativeImportPaths from 'eslint-plugin-no-relative-import-paths'
+import { globalIgnores } from 'eslint/config'
 
 export default [
   ...tanstackConfig,

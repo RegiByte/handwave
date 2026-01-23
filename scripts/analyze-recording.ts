@@ -13,14 +13,14 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { calculateDistance3D } from '@/core/lib/intent'
+import { calculateDistance3D } from '../packages/demo/src/core/lib/intent/index'
 import {
   findGestureFrames,
   getRecordingStats,
   loadRecording,
   printRecordingSummary,
-} from '@/core/lib/intent/testing/recordingUtils'
-import type { RecordingSession } from '@/core/lib/intent/vocabulary/recordingSchemas'
+} from '../packages/demo/src/core/lib/intent/testing/recordingUtils'
+import type { RecordingSession } from '@handwave/intent-engine'
 
 // ============================================================================
 // Gesture Analysis

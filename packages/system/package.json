@@ -1,0 +1,24 @@
+{
+  "name": "@handwave/system",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "type:check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@handwave/intent-engine": "file:../intent-engine",
+    "braided": "^0.1.0",
+    "braided-react": "^0.1.0",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.17"
+  }
+}
