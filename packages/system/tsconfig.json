@@ -1,9 +1,20 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
   },
-  "include": ["src/**/*", "eslint.config.js", "prettier.config.js"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "eslint.config.js",
+    "prettier.config.js",
+    "vite.config.ts",
+    "scripts/**/*.ts",
+    "prettier.config.js"
+  ]
 }

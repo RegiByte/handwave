@@ -14,11 +14,11 @@
     "declaration": true,
     "declarationMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "eslint.config.js", "prettier.config.js"]
+  "include": ["src/**/*.ts", "eslint.config.js", "prettier.config.js", "vitest.ts"]
 }
