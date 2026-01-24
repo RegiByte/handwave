@@ -46,8 +46,7 @@ export const workerDetectors = defineResource({
   }) => {
     console.log('[WorkerDetectors] Starting...')
 
-    // Latest frame from main thread (updated via pushFrame)
-    let latestFrame: ImageBitmap | null = null
+    // Latest frame timestamp (canvas holds the actual frame data)
     let latestFrameTimestamp = 0
 
     // Track last timestamp used for MediaPipe (must be strictly increasing)
@@ -72,14 +71,11 @@ export const workerDetectors = defineResource({
 
     /**
      * Push a new frame from main thread
-     * Worker will use this frame for detection on next tick
+     * Draws to canvas immediately for RAF loop to detect from
+     * Natural frame dropping: new frames overwrite canvas
      */
     const pushFrame = (frame: ImageBitmap, timestamp: number) => {
-      // Close previous frame to free memory
-      if (latestFrame) {
-        latestFrame.close()
-      }
-      latestFrame = frame
+      // Update timestamp for this frame
       latestFrameTimestamp = timestamp
 
       // Resize internal canvas if needed
@@ -90,6 +86,16 @@ export const workerDetectors = defineResource({
       ) {
         initializeCanvas(frame.width, frame.height)
       }
+
+      // ✅ Draw frame to internal canvas IMMEDIATELY (copy the data)
+      // RAF loop will detect from canvas at max speed
+      // Natural frame dropping: new frames overwrite canvas
+      if (internalCtx && internalCanvas) {
+        internalCtx.drawImage(frame, 0, 0)
+      }
+
+      // Close the ImageBitmap immediately - data is now in canvas
+      frame.close()
     }
 
     /**
@@ -178,29 +184,25 @@ export const workerDetectors = defineResource({
     }
 
     /**
-     * Detect from the latest pushed frame
-     * Used by workerUpdateLoop each tick
+     * Detect from the internal canvas
+     * Canvas contains the latest frame data (drawn in pushFrame)
      * Returns spatial data for progress event reporting
      */
     const detectFromLatestFrame = (workerFPS?: number): Array<HandSpatialInfo> | null => {
-      if (!latestFrame) {
+      // Check if we have a canvas with frame data
+      if (!internalCanvas) {
         return null
       }
 
-      // Draw frame to internal canvas for MediaPipe
-      if (internalCtx && internalCanvas) {
-        internalCtx.drawImage(latestFrame, 0, 0)
-      }
-
-      // Run detection on the internal canvas (or directly on bitmap)
-      const source = internalCanvas || latestFrame
-      return detect({ source, timestamp: latestFrameTimestamp, workerFPS })
+      // Run detection on the internal canvas
+      // Frame data was already drawn to canvas in pushFrame
+      return detect({ source: internalCanvas, timestamp: latestFrameTimestamp, workerFPS })
     }
 
     /**
      * Check if we have a frame ready for detection
      */
-    const hasFrame = () => latestFrame !== null
+    const hasFrame = () => internalCanvas !== null
 
     return {
       // Core detection
@@ -214,10 +216,8 @@ export const workerDetectors = defineResource({
 
       // Cleanup
       cleanup: () => {
-        if (latestFrame) {
-          latestFrame.close()
-          latestFrame = null
-        }
+        // Canvas cleanup happens automatically
+        // No ImageBitmap references to close
       },
     }
   },

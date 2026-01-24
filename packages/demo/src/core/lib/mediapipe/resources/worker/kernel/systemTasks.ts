@@ -11,6 +11,7 @@
 
 import { haltSystem, startSystem } from 'braided'
 import { z } from 'zod'
+import { defineTask } from '@handwave/system'
 import { detectionKeywords } from '@/core/lib/mediapipe/vocabulary/detectionKeywords'
 import type { DetectionBufferLayout } from '@/core/lib/mediapipe/shared/detectionBuffer'
 import { createDetectionBufferViews } from '@/core/lib/mediapipe/shared/detectionBuffer'
@@ -24,7 +25,6 @@ import {
   handSpatialInfoSchema,
   modelPathsSchema,
 } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
-import { defineTask } from '@handwave/system'
 
 // ============================================================================
 // Worker-Local State

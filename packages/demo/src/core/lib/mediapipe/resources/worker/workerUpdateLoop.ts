@@ -1,12 +1,14 @@
 /**
  * Worker Update Loop Resource
  *
- * Independent update loop running in the worker thread.
- * Runs detection as fast as possible with proper frame rate tracking.
+ * Hybrid architecture: RAF loop for detection + event-driven frame pushing.
+ * Main thread pushes frames to canvas, worker detects at max speed.
  *
  * Philosophy: Worker owns its timeline. Main thread renders, worker detects.
  * Results flow via SharedArrayBuffer (zero-copy).
- * No artificial throttling - let it run at maximum speed!
+ * RAF loop ensures low latency by detecting as fast as possible.
+ *
+ * Session 52: Hybrid approach - RAF loop + event-driven frame updates.
  */
 
 import type { StartedResource } from 'braided'
@@ -49,21 +51,20 @@ export const workerUpdateLoop = defineResource({
     // Event subscription for loop state changes
     const eventSubscription = createSubscription<LoopEvent>()
 
-    // Create variable timestep executor - runs as fast as possible!
+    // Create variable timestep executor for FPS tracking
     const detectionRater = frameRater.variable('workerDetection', {
       targetFPS: 60, // Target for display, but we'll run faster if we can
       smoothingWindow: 10,
       maxDeltaMs: 100, // Cap huge jumps
     })
 
-    // Loop state
+    // RAF loop state
     let rafId: number | null = null
     let lastTickTime = 0
 
     /**
-     * Main update tick
-     * Called on each animation frame when running
-     * Runs as fast as possible - no artificial throttling!
+     * Main update tick - RAF loop for low-latency detection
+     * Runs as fast as possible, detecting from canvas updated by pushFrame
      */
     const tick = (timestamp: number) => {
       const state = workerStore.getState()
@@ -84,16 +85,16 @@ export const workerUpdateLoop = defineResource({
       const deltaMs = timestamp - lastTickTime
       lastTickTime = timestamp
 
-      // Run detection from latest frame (writes to SharedArrayBuffer)
-      // No throttling - run as fast as we can!
+      // Run detection from canvas (updated by pushFrame)
+      // No throttling - run as fast as we can for lowest latency!
       if (workerDetectors.hasFrame()) {
         try {
           // Get current FPS before detection
           const currentFPS = detectionRater.getFPS()
-          
+
           // Run detection and pass FPS to be written to SharedArrayBuffer
           const spatialData = workerDetectors.detectFromLatestFrame(currentFPS)
-          
+
           // Emit spatial update event if we have data
           if (spatialData) {
             eventSubscription.notify({
@@ -102,7 +103,7 @@ export const workerUpdateLoop = defineResource({
               hands: spatialData,
             })
           }
-          
+
           // Record frame for FPS tracking
           detectionRater.recordFrame(deltaMs)
         } catch (error) {
@@ -117,6 +118,9 @@ export const workerUpdateLoop = defineResource({
       // Schedule next tick
       rafId = requestAnimationFrame(tick)
     }
+
+    // Note: pushFrame updates the canvas directly, RAF loop detects from it
+    // No callback needed - RAF loop handles detection independently
 
     /**
      * Start the update loop

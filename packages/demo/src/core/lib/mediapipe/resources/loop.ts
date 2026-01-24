@@ -19,7 +19,7 @@ import type {
   FaceLandmarkerResult,
   GestureRecognizerResult,
 } from '@mediapipe/tasks-vision'
-import { createAtom, createSubscription, createTaskPipeline } from '@handwave/system'
+import { createAtom, createRenderLoop, createSubscription, createTaskPipeline } from '@handwave/system'
 import type { CameraAPI } from './camera'
 import type { CanvasAPI } from './canvas'
 import type { DetectionWorkerResource } from './detectionWorker'
@@ -51,6 +51,64 @@ export type LoopDependencies = {
   detectionWorker: DetectionWorkerResource
   canvas: CanvasAPI
   frameRater: FrameRaterAPI
+}
+
+/**
+ * Loop context for createRenderLoop
+ */
+type LoopContext = {
+  // Canvas resource (access width/height dynamically for resize support)
+  canvas: CanvasAPI
+
+  // Video source
+  video: HTMLVideoElement
+
+  // Camera state (for stream version tracking)
+  cameraState: ReturnType<typeof createAtom<any>>
+
+  // Detection worker
+  detectionWorker: DetectionWorkerResource
+
+  // Frame raters (rate limiting)
+  frameRaters: {
+    rendering: ReturnType<FrameRaterAPI['variable']>
+    videoStreamUpdate: ReturnType<FrameRaterAPI['throttled']>
+    framePush: ReturnType<FrameRaterAPI['throttled']>
+    backdrop: ReturnType<FrameRaterAPI['throttled']>
+  }
+
+  // Render pipeline
+  renderPipeline: ReturnType<typeof createTaskPipeline<RenderContext, void>>
+
+  // Offscreen canvas for video caching
+  offscreenCanvas: HTMLCanvasElement
+  offscreenCtx: CanvasRenderingContext2D
+
+  // Mutable state (updated during loop)
+  cachedFrameData: {
+    faceResult: FaceLandmarkerResult | null
+    gestureResult: GestureRecognizerResult | null
+    videoFrame: ImageBitmap | null
+    viewport: { x: number; y: number; width: number; height: number } | null
+  }
+
+  lastViewport: { x: number; y: number; width: number; height: number } | null
+  lastUpdateTimestamp: number
+  lastStreamVersion: number
+
+  // Frame push tracking for metrics
+  framePushState: {
+    lastPushTimestamp: number
+    lastBitmapCreationMs: number
+    totalFramesPushed: number
+    totalBitmapCreationMs: number
+  }
+
+  // Subscriptions
+  frame$: ReturnType<typeof createSubscription<FrameData>>
+
+  // State atom (accessed directly, not cached)
+  state: ReturnType<typeof createAtom<LoopState>>
 }
 
 /**
@@ -108,6 +166,280 @@ const createFrameRaters = (frameRater: FrameRaterAPI) => {
 type LoopFrameRaterKey = 'backdrop' | 'videoStreamUpdate'
 type LoopShouldRun = Record<LoopFrameRaterKey, boolean>
 
+/**
+ * Update phase - sends frames to worker (async, fire-and-forget)
+ */
+const updateAsync = async (context: LoopContext, timestamp: number, deltaMs: number) => {
+  const video = context.video
+  const isPaused = context.state.get().paused
+
+  const hasVideoFrame =
+    video.videoWidth > 0 &&
+    video.videoHeight > 0 &&
+    context.canvas.width > 0 &&
+    context.canvas.height > 0
+
+  // Handle stream version changes
+  const currentStreamVersion = context.cameraState.get().streamVersion ?? 0
+  if (currentStreamVersion !== context.lastStreamVersion) {
+    context.lastStreamVersion = currentStreamVersion
+    if (context.cachedFrameData.videoFrame) {
+      context.cachedFrameData.videoFrame.close()
+    }
+    context.cachedFrameData = {
+      faceResult: null,
+      gestureResult: null,
+      videoFrame: null,
+      viewport: null,
+    }
+    context.frameRaters.videoStreamUpdate.reset()
+    context.frameRaters.framePush.reset()
+    context.frameRaters.rendering.reset()
+  }
+
+  // Update FPS
+  const currentFps = Math.round(context.frameRaters.rendering.getFPS())
+  if (currentFps !== context.state.get().fps) {
+    context.state.mutate((s) => {
+      s.fps = currentFps
+      s.frameCount += 1
+    })
+  }
+
+  const shouldRun: LoopShouldRun = {
+    backdrop: false,
+    videoStreamUpdate:
+      !isPaused && context.frameRaters.videoStreamUpdate.shouldExecute(deltaMs),
+  }
+
+  // Check if we should push frame (constant stream, no backpressure)
+  const timeSinceLastPush = timestamp - context.framePushState.lastPushTimestamp
+  const shouldPushFrame =
+    !isPaused && 
+    context.frameRaters.framePush.shouldExecute(deltaMs)
+
+  const executed: Partial<Record<LoopFrameRaterKey, boolean>> = {}
+
+  // Push frame to worker for detection (constant stream)
+  if (hasVideoFrame && shouldPushFrame && context.detectionWorker.isInitialized()) {
+    const bitmapStartTime = performance.now()
+
+    try {
+      // Create ImageBitmap from video
+      const bitmap = await createImageBitmap(video)
+      const bitmapCreationMs = performance.now() - bitmapStartTime
+
+      // Track bitmap creation time
+      context.framePushState.lastBitmapCreationMs = bitmapCreationMs
+      context.framePushState.totalBitmapCreationMs += bitmapCreationMs
+      context.framePushState.totalFramesPushed += 1
+
+      // Log metrics every 60 frames (~2 seconds at 30 FPS)
+      if (context.framePushState.totalFramesPushed % 60 === 0) {
+        const avgBitmapMs = context.framePushState.totalBitmapCreationMs / context.framePushState.totalFramesPushed
+        const workerFPS = context.state.get().workerFPS
+        const mainFPS = context.state.get().fps
+        
+        console.log('[Loop Metrics]', {
+          avgBitmapCreationMs: avgBitmapMs.toFixed(2),
+          lastBitmapMs: bitmapCreationMs.toFixed(2),
+          timeSinceLastPush: timeSinceLastPush.toFixed(2),
+          workerFPS,
+          mainFPS,
+          totalFramesPushed: context.framePushState.totalFramesPushed,
+        })
+      }
+
+      // Send to worker (zero-copy transfer)
+      context.detectionWorker.pushFrame(bitmap, timestamp)
+      context.framePushState.lastPushTimestamp = timestamp
+
+      context.frameRaters.framePush.recordExecution()
+    } catch (error) {
+      console.warn('[Loop] Failed to push frame:', error)
+    }
+  }
+
+  // Cache video frame for rendering
+  if (!isPaused && hasVideoFrame && shouldRun.videoStreamUpdate) {
+    const cacheViewport = calculateViewport(
+      video.videoWidth,
+      video.videoHeight,
+      context.canvas.width,
+      context.canvas.height,
+    )
+
+    if (
+      context.offscreenCanvas.width !== context.canvas.width ||
+      context.offscreenCanvas.height !== context.canvas.height
+    ) {
+      context.offscreenCanvas.width = context.canvas.width
+      context.offscreenCanvas.height = context.canvas.height
+    }
+
+    context.offscreenCtx.clearRect(
+      0,
+      0,
+      context.offscreenCanvas.width,
+      context.offscreenCanvas.height,
+    )
+
+    if (context.state.get().mirrored) {
+      context.offscreenCtx.save()
+      context.offscreenCtx.translate(
+        cacheViewport.x + cacheViewport.width,
+        cacheViewport.y,
+      )
+      context.offscreenCtx.scale(-1, 1)
+      context.offscreenCtx.drawImage(
+        video,
+        0,
+        0,
+        cacheViewport.width,
+        cacheViewport.height,
+      )
+      context.offscreenCtx.restore()
+    } else {
+      context.offscreenCtx.drawImage(
+        video,
+        cacheViewport.x,
+        cacheViewport.y,
+        cacheViewport.width,
+        cacheViewport.height,
+      )
+    }
+
+    try {
+      if (context.cachedFrameData.videoFrame) {
+        context.cachedFrameData.videoFrame.close()
+      }
+      context.cachedFrameData.videoFrame = await createImageBitmap(
+        context.offscreenCanvas,
+        cacheViewport.x,
+        cacheViewport.y,
+        cacheViewport.width,
+        cacheViewport.height,
+      )
+      context.cachedFrameData.viewport = cacheViewport
+      executed.videoStreamUpdate = true
+    } catch (error) {
+      console.warn('Failed to cache video frame:', error)
+    }
+  }
+
+  if (!hasVideoFrame) {
+    context.cachedFrameData.faceResult = null
+    context.cachedFrameData.gestureResult = null
+  }
+
+  if (executed.videoStreamUpdate) {
+    context.frameRaters.videoStreamUpdate.recordExecution()
+  }
+}
+
+/**
+ * Render phase - reads detection results and executes render pipeline
+ */
+const renderFrame = (context: LoopContext, timestamp: number, deltaMs: number) => {
+  const video = context.video
+  const loopState = context.state.get()
+  const isPaused = loopState.paused
+  const shouldRender = loopState.shouldRender
+
+  const viewport = calculateViewport(
+    video.videoWidth,
+    video.videoHeight,
+    context.canvas.width,
+    context.canvas.height,
+  )
+
+  // Sync viewport to worker when it changes
+  if (
+    !context.lastViewport ||
+    context.lastViewport.x !== viewport.x ||
+    context.lastViewport.y !== viewport.y ||
+    context.lastViewport.width !== viewport.width ||
+    context.lastViewport.height !== viewport.height
+  ) {
+    context.lastViewport = { ...viewport }
+    context.detectionWorker.updateViewport(viewport)
+  }
+
+  if (
+    context.offscreenCanvas.width !== context.canvas.width ||
+    context.offscreenCanvas.height !== context.canvas.height
+  ) {
+    context.offscreenCanvas.width = context.canvas.width
+    context.offscreenCanvas.height = context.canvas.height
+  }
+
+  // Read detection results from SharedArrayBuffer if enabled (zero-copy!)
+  // This happens every render frame - no message passing overhead
+  if (context.detectionWorker.isSharedBufferEnabled()) {
+    const sharedResults = context.detectionWorker.readDetectionResults()
+    if (sharedResults) {
+      // Update cached frame data with results from SharedArrayBuffer
+      context.cachedFrameData.faceResult = sharedResults.faceResult
+      context.cachedFrameData.gestureResult = sharedResults.gestureResult
+
+      // Update worker FPS in state
+      const currentWorkerFPS = Math.round(sharedResults.workerFPS)
+      if (currentWorkerFPS !== context.state.get().workerFPS) {
+        context.state.mutate((s) => {
+          s.workerFPS = currentWorkerFPS
+        })
+      }
+
+      // Emit frame event for subscribers (e.g., recording resource)
+      context.frame$.notify({
+        timestamp: sharedResults.timestamp,
+        video,
+        faceResult: sharedResults.faceResult,
+        gestureResult: sharedResults.gestureResult,
+      })
+    }
+  }
+
+  const shouldRunBackdrop = context.frameRaters.backdrop.shouldExecute(deltaMs)
+  const renderExecuted: Partial<Record<LoopFrameRaterKey, boolean>> = {}
+
+  const renderContext = {
+    ctx: context.canvas.ctx,
+    drawer: context.canvas.drawer,
+    width: context.canvas.width,
+    height: context.canvas.height,
+    video,
+    faceResult: context.cachedFrameData.faceResult,
+    gestureResult: context.cachedFrameData.gestureResult,
+    timestamp,
+    deltaMs,
+    mirrored: context.state.get().mirrored,
+    paused: isPaused,
+    cachedVideoFrame: context.cachedFrameData?.videoFrame ?? null,
+    viewport,
+    cachedViewport: context.cachedFrameData.viewport,
+    frameRaters: context.frameRaters,
+    shouldRun: {
+      backdrop: shouldRunBackdrop,
+      videoStreamUpdate: false,
+    },
+    shouldRender: shouldRender,
+    recordExecution: (key: LoopFrameRaterKey) => {
+      renderExecuted[key] = true
+    },
+    offscreenCtx: context.offscreenCtx,
+  } satisfies RenderContext
+
+  // Execute all render tasks through the pipeline
+  context.renderPipeline.execute(renderContext)
+
+  if (renderExecuted.backdrop) {
+    context.frameRaters.backdrop.recordExecution()
+  }
+
+  context.frameRaters.rendering.recordFrame(deltaMs)
+}
+
 export const loopResource = defineResource({
   dependencies: ['camera', 'detectionWorker', 'canvas', 'frameRater'] as const,
   start: ({
@@ -130,44 +462,12 @@ export const loopResource = defineResource({
 
     const frame$ = createSubscription<FrameData>()
     const workerReady$ = createSubscription<{ mirrored: boolean }>()
-    
+
     // Create task pipeline for render tasks
     const renderPipeline = createTaskPipeline<RenderContext, void>({
       contextInit: () => undefined,
       onError: (error) => console.error('Render task error:', error),
     })
-
-    let rafId: number | null = null
-    let lastRenderTimestamp = performance.now()
-    let lastUpdateTimestamp = performance.now()
-    let lastStreamVersion = camera.state.get().streamVersion ?? 0
-
-    // Cached frame data
-    let cachedFrameData: {
-      faceResult: FaceLandmarkerResult | null
-      gestureResult: GestureRecognizerResult | null
-      videoFrame: ImageBitmap | null
-      viewport: { x: number; y: number; width: number; height: number } | null
-    } = {
-      faceResult: null,
-      gestureResult: null,
-      videoFrame: null,
-      viewport: null,
-    }
-
-    const frameRaters = createFrameRaters(frameRater)
-
-    // Track last viewport for sync to worker
-    let lastViewport: { x: number; y: number; width: number; height: number } | null = null
-
-    // Offscreen canvas for caching video frames
-    const offscreenCanvas = document.createElement('canvas')
-    const offscreenCtx = offscreenCanvas.getContext('2d', {
-      willReadFrequently: true,
-    })
-    if (!offscreenCtx) {
-      throw new Error('Failed to create offscreen canvas context')
-    }
 
     /**
      * Initialize worker detection with SharedArrayBuffer
@@ -190,273 +490,74 @@ export const loopResource = defineResource({
       console.log('[Loop] ✅ Worker detection initialized')
     }
 
-    // Update loop - sends frames to worker
-    const updateAsync = async () => {
-      if (!state.get().running) return
-
-      const timestamp = performance.now()
-      const deltaMs = timestamp - lastUpdateTimestamp
-      lastUpdateTimestamp = timestamp
-
-      const video = camera.video
-      const isPaused = state.get().paused
-
-      const hasVideoFrame =
-        video.videoWidth > 0 &&
-        video.videoHeight > 0 &&
-        canvas.width > 0 &&
-        canvas.height > 0
-
-      // Handle stream version changes
-      const currentStreamVersion = camera.state.get().streamVersion ?? 0
-      if (currentStreamVersion !== lastStreamVersion) {
-        lastStreamVersion = currentStreamVersion
-        if (cachedFrameData.videoFrame) {
-          cachedFrameData.videoFrame.close()
-        }
-        cachedFrameData = {
-          faceResult: null,
-          gestureResult: null,
-          videoFrame: null,
-          viewport: null,
-        }
-        frameRaters.videoStreamUpdate.reset()
-        frameRaters.framePush.reset()
-        frameRaters.rendering.reset()
-      }
-
-      // Update FPS
-      const currentFps = Math.round(frameRaters.rendering.getFPS())
-      if (currentFps !== state.get().fps) {
-        state.mutate((s) => {
-          s.fps = currentFps
-          s.frameCount += 1
-        })
-      }
-
-      const shouldRun: LoopShouldRun = {
-        backdrop: false,
-        videoStreamUpdate:
-          !isPaused && frameRaters.videoStreamUpdate.shouldExecute(deltaMs),
-      }
-
-      const shouldPushFrame =
-        !isPaused && frameRaters.framePush.shouldExecute(deltaMs)
-
-      const executed: Partial<Record<LoopFrameRaterKey, boolean>> = {}
-
-      // Push frame to worker for detection
-      if (hasVideoFrame && shouldPushFrame && detectionWorker.isInitialized()) {
-        try {
-          // Create ImageBitmap from video
-          const bitmap = await createImageBitmap(video)
-
-          // Send to worker (zero-copy transfer)
-          detectionWorker.pushFrame(bitmap, timestamp)
-
-          frameRaters.framePush.recordExecution()
-        } catch (error) {
-          console.warn('[Loop] Failed to push frame:', error)
-        }
-      }
-
-      // Cache video frame for rendering
-      if (!isPaused && hasVideoFrame && shouldRun.videoStreamUpdate) {
-        const cacheViewport = calculateViewport(
-          video.videoWidth,
-          video.videoHeight,
-          canvas.width,
-          canvas.height,
-        )
-
-        if (
-          offscreenCanvas.width !== canvas.width ||
-          offscreenCanvas.height !== canvas.height
-        ) {
-          offscreenCanvas.width = canvas.width
-          offscreenCanvas.height = canvas.height
-        }
-
-        offscreenCtx.clearRect(
-          0,
-          0,
-          offscreenCanvas.width,
-          offscreenCanvas.height,
-        )
-
-        if (state.get().mirrored) {
-          offscreenCtx.save()
-          offscreenCtx.translate(
-            cacheViewport.x + cacheViewport.width,
-            cacheViewport.y,
-          )
-          offscreenCtx.scale(-1, 1)
-          offscreenCtx.drawImage(
-            video,
-            0,
-            0,
-            cacheViewport.width,
-            cacheViewport.height,
-          )
-          offscreenCtx.restore()
-        } else {
-          offscreenCtx.drawImage(
-            video,
-            cacheViewport.x,
-            cacheViewport.y,
-            cacheViewport.width,
-            cacheViewport.height,
-          )
-        }
-
-        try {
-          if (cachedFrameData.videoFrame) {
-            cachedFrameData.videoFrame.close()
-          }
-          cachedFrameData.videoFrame = await createImageBitmap(
-            offscreenCanvas,
-            cacheViewport.x,
-            cacheViewport.y,
-            cacheViewport.width,
-            cacheViewport.height,
-          )
-          cachedFrameData.viewport = cacheViewport
-          executed.videoStreamUpdate = true
-        } catch (error) {
-          console.warn('Failed to cache video frame:', error)
-        }
-      }
-
-      if (!hasVideoFrame) {
-        cachedFrameData.faceResult = null
-        cachedFrameData.gestureResult = null
-      }
-
-      if (executed.videoStreamUpdate) {
-        frameRaters.videoStreamUpdate.recordExecution()
-      }
+    // Create offscreen canvas for caching video frames
+    const offscreenCanvas = document.createElement('canvas')
+    const offscreenCtx = offscreenCanvas.getContext('2d', {
+      willReadFrequently: true,
+    })
+    if (!offscreenCtx) {
+      throw new Error('Failed to create offscreen canvas context')
     }
 
-    const update = () => {
-      updateAsync().catch((error) => {
-        console.error('Update error:', error)
+    /**
+     * Context factory for createRenderLoop
+     */
+    const createLoopContext = (): LoopContext => ({
+      canvas,
+      video: camera.video,
+      cameraState: camera.state,
+      detectionWorker,
+      frameRaters: createFrameRaters(frameRater),
+      renderPipeline,
+      offscreenCanvas,
+      offscreenCtx,
+      cachedFrameData: {
+        faceResult: null,
+        gestureResult: null,
+        videoFrame: null,
+        viewport: null,
+      },
+      lastViewport: null,
+      lastUpdateTimestamp: 0,
+      lastStreamVersion: camera.state.get().streamVersion ?? 0,
+      framePushState: {
+        lastPushTimestamp: 0,
+        lastBitmapCreationMs: 0,
+        totalFramesPushed: 0,
+        totalBitmapCreationMs: 0,
+      },
+      frame$,
+      state,
+    })
+
+    /**
+     * beforeRender hook - update phase (async operations)
+     */
+    const beforeRender = (context: LoopContext, timestamp: number, deltaMs: number) => {
+      context.lastUpdateTimestamp = timestamp
+
+      // Fire-and-forget async update
+      updateAsync(context, timestamp, deltaMs).catch((error) => {
+        console.error('[Loop] Update error:', error)
       })
     }
 
-    // Render loop
-    const render = () => {
-      if (!state.get().running) return
-
-      const timestamp = performance.now()
-      const deltaMs = timestamp - lastRenderTimestamp
-      lastRenderTimestamp = timestamp
-
-      const video = camera.video
-      const loopState = state.get()
-      const isPaused = loopState.paused
-      const shouldRender = loopState.shouldRender
-
-      // canvas.clear()
-
-      const viewport = calculateViewport(
-        video.videoWidth,
-        video.videoHeight,
-        canvas.width,
-        canvas.height,
-      )
-
-      // Sync viewport to worker when it changes
-      if (
-        !lastViewport ||
-        lastViewport.x !== viewport.x ||
-        lastViewport.y !== viewport.y ||
-        lastViewport.width !== viewport.width ||
-        lastViewport.height !== viewport.height
-      ) {
-        lastViewport = { ...viewport }
-        detectionWorker.updateViewport(viewport)
-      }
-
-      if (
-        offscreenCanvas.width !== canvas.width ||
-        offscreenCanvas.height !== canvas.height
-      ) {
-        offscreenCanvas.width = canvas.width
-        offscreenCanvas.height = canvas.height
-      }
-
-      // Read detection results from SharedArrayBuffer if enabled (zero-copy!)
-      // This happens every render frame - no message passing overhead
-      if (detectionWorker.isSharedBufferEnabled()) {
-        const sharedResults = detectionWorker.readDetectionResults()
-        if (sharedResults) {
-          // Update cached frame data with results from SharedArrayBuffer
-          cachedFrameData.faceResult = sharedResults.faceResult
-          cachedFrameData.gestureResult = sharedResults.gestureResult
-
-          // Update worker FPS in state
-          const currentWorkerFPS = Math.round(sharedResults.workerFPS)
-          if (currentWorkerFPS !== state.get().workerFPS) {
-            state.mutate((s) => {
-              s.workerFPS = currentWorkerFPS
-            })
-          }
-
-          // Emit frame event for subscribers (e.g., recording resource)
-          frame$.notify({
-            timestamp: sharedResults.timestamp,
-            video,
-            faceResult: sharedResults.faceResult,
-            gestureResult: sharedResults.gestureResult,
-          })
-        }
-      }
-
-      const shouldRunBackdrop = frameRaters.backdrop.shouldExecute(deltaMs)
-      const renderExecuted: Partial<Record<LoopFrameRaterKey, boolean>> = {}
-
-      const renderContext = {
-        ctx: canvas.ctx,
-        drawer: canvas.drawer,
-        width: canvas.width,
-        height: canvas.height,
-        video,
-        faceResult: cachedFrameData.faceResult,
-        gestureResult: cachedFrameData.gestureResult,
-        timestamp,
-        deltaMs,
-        mirrored: state.get().mirrored,
-        paused: isPaused,
-        cachedVideoFrame: cachedFrameData?.videoFrame ?? null,
-        viewport,
-        cachedViewport: cachedFrameData.viewport,
-        frameRaters,
-        shouldRun: {
-          backdrop: shouldRunBackdrop,
-          videoStreamUpdate: false,
-        },
-        shouldRender: shouldRender,
-        recordExecution: (key: LoopFrameRaterKey) => {
-          renderExecuted[key] = true
-        },
-        offscreenCtx,
-      } satisfies RenderContext
-
-      // Execute all render tasks through the pipeline
-      renderPipeline.execute(renderContext)
-
-      if (renderExecuted.backdrop) {
-        frameRaters.backdrop.recordExecution()
-      }
-
-      frameRaters.rendering.recordFrame(deltaMs)
+    /**
+     * afterRender hook - render phase (sync operations)
+     */
+    const afterRender = (context: LoopContext, timestamp: number, deltaMs: number) => {
+      renderFrame(context, timestamp, deltaMs)
     }
 
-    const tick = () => {
-      update()
-      render()
-      rafId = requestAnimationFrame(tick)
-    }
+    /**
+     * Create the render loop
+     */
+    const renderLoop = createRenderLoop({
+      createContext: createLoopContext,
+      beforeRender,
+      afterRender,
+      onError: (error) => console.error('[Loop] Render error:', error),
+    })
 
     const api = {
       state,
@@ -467,8 +568,6 @@ export const loopResource = defineResource({
       start: () => {
         if (state.get().running) return
         state.update((s) => ({ ...s, running: true }))
-        lastRenderTimestamp = performance.now()
-        lastUpdateTimestamp = performance.now()
 
         // Initialize worker detection on first start
         if (!detectionWorker.isInitialized()) {
@@ -486,20 +585,20 @@ export const loopResource = defineResource({
             })
         }
 
-        rafId = requestAnimationFrame(tick)
+        renderLoop.start()
       },
 
       stop: () => {
         state.mutate((s) => {
           s.running = false
         })
-        if (rafId !== null) {
-          cancelAnimationFrame(rafId)
-          rafId = null
-        }
-        if (cachedFrameData.videoFrame) {
-          cachedFrameData.videoFrame.close()
-          cachedFrameData.videoFrame = null
+        renderLoop.stop()
+
+        // Cleanup cached video frame
+        const context = renderLoop.getContext()
+        if (context?.cachedFrameData.videoFrame) {
+          context.cachedFrameData.videoFrame.close()
+          context.cachedFrameData.videoFrame = null
         }
       },
 
@@ -510,8 +609,6 @@ export const loopResource = defineResource({
 
       resume: () => {
         state.update((s) => ({ ...s, paused: false }))
-        lastRenderTimestamp = performance.now()
-        lastUpdateTimestamp = performance.now()
         detectionWorker.sendCommand({ type: 'resume' })
       },
 
