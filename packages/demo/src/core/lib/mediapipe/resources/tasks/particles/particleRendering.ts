@@ -9,14 +9,18 @@
 
 import type { ParticleArrays } from './particleState'
 import {
-  PARTICLE_RADIUS,
-  GLOW_RADIUS,
-  VORTEX_RING_RADIUS,
-  VORTEX_CORE_RADIUS,
-  FINGER_VORTEX_RING_RADIUS,
   FINGER_VORTEX_CORE_RADIUS,
+  FINGER_VORTEX_RING_RADIUS,
+  GLOW_RADIUS,
+  PARTICLE_RADIUS,
+  VORTEX_CORE_RADIUS,
+  VORTEX_RING_RADIUS,
 } from './particleState'
-import { simpleNoise } from './particlePhysics'
+import { 
+  calculateSingleAxisOscillation,
+  calculateTripleAxisRotation,
+  simpleNoise,
+} from './particlePhysics'
 import { hexToRgba } from '@/core/lib/colors'
 
 // ============================================================================
@@ -187,12 +191,8 @@ export function renderFingerVortexOverlay(
 }
 
 /**
- * Render logarithmic spiral overlay (golden ratio).
- * Shows the beautiful nautilus shell / galaxy arm pattern.
- */
-/**
  * Render single-axis logarithmic spiral overlay (LEFT HAND).
- * Classic galaxy spiral - all particles follow the same golden ratio spiral.
+ * Draws a simple elliptical orbit showing the average stable radius where particles settle.
  */
 export function renderSingleAxisSpiralOverlay(
   ctx: CanvasRenderingContext2D,
@@ -203,52 +203,46 @@ export function renderSingleAxisSpiralOverlay(
   ctx.save()
   ctx.globalCompositeOperation = 'source-over'
 
-  // Golden ratio parameters
-  const PHI = 1.618033988749895
-  const b = (2 / Math.PI) * Math.log(PHI)
-  const a = 30
+  // Average stable orbit radius (particles settle around 60-80px from center)
+  const orbitRadiusX = 125 // Horizontal axis (1.5x bigger for visual candy)
+  const orbitRadiusY = 50 // Vertical axis (thinner to create oval)
 
-  // Pulsing animation
-  const pulse = 0.9 + Math.sin(timestamp * 0.005) * 0.1
+  // Gentle pulsing animation
+  const pulse = 0.95 + Math.sin(timestamp * 0.003) * 0.05
 
-  // Draw single-axis golden spiral
-  ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)' // Golden color
-  ctx.lineWidth = 2
-  
-  const numArms = 3
-  for (let arm = 0; arm < numArms; arm++) {
-    const armOffset = (arm * Math.PI * 2) / numArms
-    
-    ctx.beginPath()
-    for (let i = 0; i <= 100; i++) {
-      const t = i / 100
-      const angle = -Math.PI + t * Math.PI * 4 + armOffset + timestamp * 0.001
-      const radius = a * Math.exp(b * angle) * pulse
+  // Calculate oscillation to match physics
+  const oscillationOffset = calculateSingleAxisOscillation(timestamp)
 
-      if (radius > 200) break
+  // Draw the stable orbit oval with matching oscillation
+  ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)' // Golden color
+  ctx.lineWidth = 2.5
+  ctx.beginPath()
+  ctx.ellipse(
+    x, 
+    y, 
+    orbitRadiusX * pulse, 
+    orbitRadiusY * pulse, 
+    oscillationOffset, // Oscillate to match physics
+    0, 
+    Math.PI * 2
+  )
+  ctx.stroke()
 
-      const px = x + Math.cos(angle) * radius
-      const py = y + Math.sin(angle) * radius
-
-      if (i === 0) ctx.moveTo(px, py)
-      else ctx.lineTo(px, py)
-    }
-    ctx.stroke()
-  }
+  // Draw a subtle fill to show the stable zone
+  ctx.fillStyle = 'rgba(255, 215, 0, 0.08)'
+  ctx.fill()
 
   // Draw center core with golden glow
-  ctx.fillStyle = 'rgba(255, 215, 0, 0.8)'
+  ctx.fillStyle = 'rgba(255, 215, 0, 0.9)'
   ctx.beginPath()
-  ctx.arc(x, y, FINGER_VORTEX_CORE_RADIUS * 0.8, 0, Math.PI * 2)
+  ctx.arc(x, y, FINGER_VORTEX_CORE_RADIUS * 0.7, 0, Math.PI * 2)
   ctx.fill()
 
-  // Outer golden ring
-  ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'
-  ctx.fillStyle = 'rgba(255, 215, 0, 0.1)'
-  ctx.lineWidth = 1.5
+  // Inner glow ring
+  ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'
+  ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.arc(x, y, FINGER_VORTEX_RING_RADIUS * pulse, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.arc(x, y, FINGER_VORTEX_CORE_RADIUS * 1.2, 0, Math.PI * 2)
   ctx.stroke()
 
   ctx.restore()
@@ -256,7 +250,8 @@ export function renderSingleAxisSpiralOverlay(
 
 /**
  * Render 3-axis logarithmic spiral overlay (RIGHT HAND).
- * Three diagonal axes create an atomic orbital structure.
+ * Draws three elliptical orbits - one for each axis where particles settle.
+ * Creates an atomic orbital / triquetra-like structure.
  */
 export function renderTripleAxisSpiralOverlay(
   ctx: CanvasRenderingContext2D,
@@ -267,66 +262,58 @@ export function renderTripleAxisSpiralOverlay(
   ctx.save()
   ctx.globalCompositeOperation = 'source-over'
 
-  // Golden ratio parameters
-  const PHI = 1.618033988749895
-  const b = (2 / Math.PI) * Math.log(PHI)
-  const a = 30
+  // Average stable orbit radius (particles settle around 60-80px from center)
+  const orbitRadiusX = 150 // Horizontal axis (1.5x bigger for visual candy)
+  const orbitRadiusY = 50 // Vertical axis (thinner to create oval)
 
-  // Pulsing animation
-  const pulse = 0.9 + Math.sin(timestamp * 0.005) * 0.1
+  // Gentle pulsing animation
+  const pulse = 0.95 + Math.sin(timestamp * 0.003) * 0.05
 
-  // Three axis angles: 45°, 90°, 135°
+  // Calculate rotation to match physics
+  const rotationOffset = calculateTripleAxisRotation(timestamp)
+
+  // Three axis angles: 45°, 90°, 135° (diagonal \, vertical |, diagonal /)
   const axisAngles = [Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4]
   const axisColors = [
     'rgba(255, 215, 0, 0.6)',   // Golden (diagonal \)
-    'rgba(255, 180, 0, 0.5)',   // Amber (vertical |)
-    'rgba(255, 140, 0, 0.5)',   // Orange (diagonal /)
+    'rgba(255, 180, 0, 0.6)',   // Amber (vertical |)
+    'rgba(255, 140, 0, 0.6)',   // Orange (diagonal /)
   ]
 
-  const numArms = 3
-  
-  // Draw spiral for each axis
+  // Draw elliptical orbit for each axis
   for (let axisIndex = 0; axisIndex < 3; axisIndex++) {
-    const axisAngle = axisAngles[axisIndex]
+    const axisAngle = axisAngles[axisIndex] + rotationOffset // Add rotation to match physics
+    
     ctx.strokeStyle = axisColors[axisIndex]
-    ctx.lineWidth = 2
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.ellipse(
+      x, 
+      y, 
+      orbitRadiusX * pulse, 
+      orbitRadiusY * pulse, 
+      axisAngle, // Rotate the oval to match the axis
+      0, 
+      Math.PI * 2
+    )
+    ctx.stroke()
 
-    for (let arm = 0; arm < numArms; arm++) {
-      const armOffset = (arm * Math.PI * 2) / numArms
-      
-      ctx.beginPath()
-      for (let i = 0; i <= 100; i++) {
-        const t = i / 100
-        const angle = -Math.PI + t * Math.PI * 4 + armOffset + timestamp * 0.001
-        const radius = a * Math.exp(b * angle) * pulse
-
-        if (radius > 200) break
-
-        // Rotate by axis angle
-        const rotatedAngle = angle + axisAngle
-        const px = x + Math.cos(rotatedAngle) * radius
-        const py = y + Math.sin(rotatedAngle) * radius
-
-        if (i === 0) ctx.moveTo(px, py)
-        else ctx.lineTo(px, py)
-      }
-      ctx.stroke()
-    }
+    // Subtle fill for each orbital
+    ctx.fillStyle = axisColors[axisIndex].replace('0.6)', '0.05)')
+    ctx.fill()
   }
 
   // Draw center core with golden glow
-  ctx.fillStyle = 'rgba(255, 215, 0, 0.8)'
+  ctx.fillStyle = 'rgba(255, 215, 0, 0.9)'
   ctx.beginPath()
-  ctx.arc(x, y, FINGER_VORTEX_CORE_RADIUS * 0.8, 0, Math.PI * 2)
+  ctx.arc(x, y, FINGER_VORTEX_CORE_RADIUS * 0.7, 0, Math.PI * 2)
   ctx.fill()
 
-  // Outer golden ring
-  ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'
-  ctx.fillStyle = 'rgba(255, 215, 0, 0.1)'
-  ctx.lineWidth = 1.5
+  // Inner glow ring
+  ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'
+  ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.arc(x, y, FINGER_VORTEX_RING_RADIUS * pulse, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.arc(x, y, FINGER_VORTEX_CORE_RADIUS * 1.2, 0, Math.PI * 2)
   ctx.stroke()
 
   ctx.restore()
@@ -375,12 +362,32 @@ export function renderFlowField(
   // Draw arrows at grid points
   for (let x = gridSpacing; x < width; x += gridSpacing) {
     for (let y = gridSpacing; y < height; y += gridSpacing) {
-      // Calculate flow direction at this point
-      const angle = simpleNoise(x, y, timestamp) * Math.PI * 2
-      const strength = 1.2 // Same as applyFlowFieldForce
+      // Calculate flow direction using multi-scale flow field (matching physics)
+      // Large slow swirls - macro structure (ocean gyres)
+      const angle1 = simpleNoise(x * 0.5, y * 0.5, timestamp * 0.5) * Math.PI * 2
+      const fx1 = Math.cos(angle1) * 0.5
+      const fy1 = Math.sin(angle1) * 0.5
 
-      // Arrow length based on strength
-      const arrowLength = strength * 15
+      // Medium turbulence - mid-range chaos (eddies)
+      const angle2 = simpleNoise(x, y, timestamp) * Math.PI * 2
+      const fx2 = Math.cos(angle2) * 0.3
+      const fy2 = Math.sin(angle2) * 0.3
+
+      // Small fast jitter - fine detail (ripples)
+      const angle3 = simpleNoise(x * 2, y * 2, timestamp * 2) * Math.PI * 2
+      const fx3 = Math.cos(angle3) * 0.2
+      const fy3 = Math.sin(angle3) * 0.2
+
+      // Combine all scales (matching physics exactly)
+      const combinedFx = fx1 + fx2 + fx3
+      const combinedFy = fy1 + fy2 + fy3
+
+      // Calculate angle and magnitude from combined force
+      const angle = Math.atan2(combinedFy, combinedFx)
+      const magnitude = Math.sqrt(combinedFx * combinedFx + combinedFy * combinedFy)
+
+      // Arrow length based on actual combined magnitude
+      const arrowLength = magnitude * 15
       const endX = x + Math.cos(angle) * arrowLength
       const endY = y + Math.sin(angle) * arrowLength
 

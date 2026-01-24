@@ -151,6 +151,14 @@ export const shortcutsResource = defineResource({
           commands.togglePause()
         }, 3000)
       }, { wait: 100 }),
+      scheduleLongPause: throttle(() => {
+        if (schedulePauseTimeout) {
+          clearTimeout(schedulePauseTimeout)
+        }
+        schedulePauseTimeout = setTimeout(() => {
+          commands.togglePause()
+        }, 10000)
+      }, { wait: 100 }),
     }
 
     // ========================================================================
@@ -165,6 +173,10 @@ export const shortcutsResource = defineResource({
       {
         keymaps: ['space'],
         handler: () => throttledCommands.togglePause(),
+      },
+      {
+        keymaps: ['ctrl+space'],
+        handler: () => throttledCommands.scheduleLongPause(),
       },
       {
         keymaps: ['m'],

@@ -11,9 +11,6 @@ import { task } from '@handwave/system'
 import type { Intent } from '@handwave/intent-engine'
 
 // Local module imports - clean separation of concerns
-import type { RenderContext } from '../types'
-import { getFaceOvalIndices } from '../face-mesh'
-import { mapLandmarkToViewport } from '../utils'
 
 import type { ParticleState } from './particleState'
 import {
@@ -42,12 +39,14 @@ import {
   spawnParticle,
 } from './particleState'
 
+import type { ResolvedForce } from './particlePhysics'
 import {
   applyFlowFieldForce,
   applyRepelSwirlForce,
   applySingleAxisSpiralForce,
   applyTripleAxisSpiralForce,
   applyVortexForce,
+  assignParticlesToVortexes,
   getFingerVortexPosition,
   updateParticle,
 } from './particlePhysics'
@@ -61,6 +60,9 @@ import {
   renderTripleAxisSpiralOverlay,
   renderVortexOverlay,
 } from './particleRendering'
+import { mapLandmarkToViewport } from '@/core/lib/mediapipe/resources/tasks/utils'
+import { getFaceOvalIndices } from '@/core/lib/mediapipe/resources/tasks/face-mesh'
+import type { RenderContext } from '@/core/lib/mediapipe/resources/tasks/types'
 
 // Intent imports
 import type { IntentEngineAPI } from '@/core/lib/intent/resources/intentEngineResource'
@@ -526,7 +528,7 @@ export const createParticlesTask = (
       // Update physics for all particles
       // ======================================================================
 
-      const resolvedForces = Array.from(state.activeForces.values())
+      const resolvedForces: Array<ResolvedForce> = Array.from(state.activeForces.values())
         .filter((force) => force.type !== 'spawn')
         .map((force) => {
           const target = { x: force.x, y: force.y }
@@ -552,36 +554,73 @@ export const createParticlesTask = (
         })
 
       if (!paused) {
+        // ====================================================================
+        // DUAL VORTEX SUPPORT & STABILITY BREAKING
+        // ====================================================================
+        // When 2+ finger vortexes are active, partition particles between them
+        // to create distinct visual patterns per hand. Also track nearest vortex
+        // distance for stability-breaking flow field amplification.
+        
+        // Separate vortex and repel forces for dual vortex support
+        const vortexForces = resolvedForces.filter(entry => entry.force.type === 'vortex')
+        const repelForces = resolvedForces.filter(entry => entry.force.type === 'repel')
+
+        // Assign particles to vortexes when 2+ finger vortexes are active
+        // This creates distinct visual patterns per hand
+        const fingerVortexes = vortexForces.filter(entry => entry.force.isFingerVortex)
+        const particleVortexAssignments = fingerVortexes.length >= 2
+          ? assignParticlesToVortexes(state.particles, fingerVortexes)
+          : new Map() // Empty = all particles affected by all vortexes
+
         // Update all active particles (iterate backwards for safe deletion)
         const particles = state.particles
         for (let activeIdx = particles.activeIndices.length - 1; activeIdx >= 0; activeIdx--) {
           const i = particles.activeIndices[activeIdx]
           let shouldDelete = false
+          let nearestVortexDistance: number | undefined
+          let nearestVortexRingRadius: number | undefined
 
-          // Apply flow field force for organic particle motion
-          applyFlowFieldForce(particles, i, timestamp, deltaMs)
+          // Apply vortex forces (with partitioning for dual finger vortex)
+          for (let vortexIdx = 0; vortexIdx < vortexForces.length; vortexIdx++) {
+            const entry = vortexForces[vortexIdx]
+            const { force, forceX, forceY } = entry
 
-          // Apply forces from all active force fields (hands)
-          for (const entry of resolvedForces) {
-            const { force, forceX, forceY, boostedStrength } = entry
-
-            if (force.type === 'vortex') {
-              // Choose between different attractor types based on hand
-              let dead = false
-              if (force.hand === 'left' && force.useLogarithmicSpiral) {
-                // Left hand: single-axis galaxy spiral
-                dead = applySingleAxisSpiralForce(particles, i, force, deltaMs, forceX, forceY, width, height)
-              } else if (force.hand === 'right' && force.useLogarithmicSpiral) {
-                // Right hand: 3-axis atomic orbital spiral
-                dead = applyTripleAxisSpiralForce(particles, i, force, deltaMs, forceX, forceY, width, height)
-              } else {
-                // Default vortex
-                dead = applyVortexForce(particles, i, force, deltaMs, forceX, forceY, width, height)
+            // Skip this vortex if particle is assigned to a different one
+            if (particleVortexAssignments.size > 0) {
+              const assignedVortexIdx = particleVortexAssignments.get(i)
+              // Find which index this vortex is in the fingerVortexes array
+              const fingerVortexIdx = fingerVortexes.indexOf(entry)
+              if (fingerVortexIdx !== -1 && assignedVortexIdx !== fingerVortexIdx) {
+                continue // Skip - particle belongs to different vortex
               }
-              if (dead) shouldDelete = true
-              continue
             }
 
+            // Choose between different attractor types based on hand
+            let result: { shouldDelete: boolean; distance: number }
+            if (force.hand === 'left' && force.useLogarithmicSpiral) {
+              // Left hand: single-axis galaxy spiral
+              result = applySingleAxisSpiralForce(particles, i, force, deltaMs, forceX, forceY, width, height, timestamp)
+            } else if (force.hand === 'right' && force.useLogarithmicSpiral) {
+              // Right hand: 3-axis atomic orbital spiral
+              result = applyTripleAxisSpiralForce(particles, i, force, deltaMs, forceX, forceY, width, height, timestamp)
+            } else {
+              // Default vortex
+              result = applyVortexForce(particles, i, force, deltaMs, forceX, forceY, width, height)
+            }
+
+            if (result.shouldDelete) shouldDelete = true
+
+            // Track nearest vortex for stability breaking
+            if (nearestVortexDistance === undefined || result.distance < nearestVortexDistance) {
+              nearestVortexDistance = result.distance
+              // Estimate ring radius based on vortex type
+              nearestVortexRingRadius = force.isFingerVortex ? 80 : 200
+            }
+          }
+
+          // Apply repel forces (no partitioning needed)
+          for (const entry of repelForces) {
+            const { force, forceX, forceY, boostedStrength } = entry
             applyRepelSwirlForce(
               particles,
               i,
@@ -599,6 +638,10 @@ export const createParticlesTask = (
             removeParticleAt(particles, i)
             continue
           }
+
+          // Apply flow field force with stability breaking
+          // When particles are in stable vortex orbits, amplify flow field to prevent clustering
+          applyFlowFieldForce(particles, i, timestamp, deltaMs, nearestVortexDistance, nearestVortexRingRadius)
 
           // Update position and handle boundaries
           updateParticle(particles, i, width, height, deltaMs, frameCount)

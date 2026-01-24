@@ -89,10 +89,10 @@ export type SpawnParticleOptions = {
 // Constants
 // ============================================================================
 
-export const MAX_PARTICLES = 1800
+export const MAX_PARTICLES = 1500
 export const SPAWN_RATE = 3 // particles per frame
 export const PARTICLE_RADIUS = 3
-export const GLOW_RADIUS = 6
+export const GLOW_RADIUS = 8
 export const DAMPING = 0.995 // velocity damping (higher = less damping, more movement)
 
 // Force strengths

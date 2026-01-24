@@ -27,6 +27,7 @@ export default [
           groups: [['builtin', 'external'], 'parent', 'sibling', 'index'],
         },
       ],
+      '@typescript-eslint/prefer-for-of': 'off',
     },
   },
   {
