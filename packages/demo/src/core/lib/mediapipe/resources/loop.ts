@@ -356,7 +356,7 @@ export const loopResource = defineResource({
       const isPaused = loopState.paused
       const shouldRender = loopState.shouldRender
 
-      canvas.clear()
+      // canvas.clear()
 
       const viewport = calculateViewport(
         video.videoWidth,

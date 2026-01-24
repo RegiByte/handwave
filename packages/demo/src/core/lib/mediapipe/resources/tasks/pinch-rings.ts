@@ -11,7 +11,6 @@ import { FINGERTIP_INDICES, calculateDistance3D } from '@handwave/intent-engine'
 import type { Vector3 } from '@handwave/intent-engine';
 import type { RenderTask } from './types'
 import { mapLandmarkToViewport } from './utils'
-import type { FrameHistoryAPI } from '@/core/lib/intent/resources/frameHistoryResource'
 
 /**
  * Create pinch rings render task
@@ -19,9 +18,7 @@ import type { FrameHistoryAPI } from '@/core/lib/intent/resources/frameHistoryRe
  * Draws colored rings around fingertips when they are close to the thumb (pinch detected).
  * Ring intensity fades based on distance from threshold.
  */
-export const createPinchRingsTask = (
-  _frameHistory: FrameHistoryAPI
-): RenderTask => {
+export const createPinchRingsTask = (): RenderTask => {
   return ({ ctx, gestureResult, viewport, mirrored }) => {
     if (!gestureResult?.landmarks?.length) return
 

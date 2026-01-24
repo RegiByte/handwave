@@ -7,7 +7,7 @@ import noRelativeImportPaths from 'eslint-plugin-no-relative-import-paths'
 export default [
   ...tanstackConfig,
   // importPlugin.flatConfigs.recommended,
-  globalIgnores(['.regibyte', 'eslint.config.js']),
+  globalIgnores(['eslint.config.js']),
   {
     rules: {
       '@typescript-eslint/no-unnecessary-condition': 'off',

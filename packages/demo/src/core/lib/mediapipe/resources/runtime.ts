@@ -9,6 +9,7 @@
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
 import type { GridResolution } from '@handwave/intent-engine'
+import { createAtom } from '@handwave/system'
 import type { CameraAPI } from './camera'
 import type { LoopResource } from './loop'
 import type { DetectionWorkerResource } from './detectionWorker'
@@ -41,7 +42,6 @@ import { mediapipeKeywords } from '@/core/lib/mediapipe/vocabulary/keywords'
 import { detectionKeywords } from '@/core/lib/mediapipe/vocabulary/detectionKeywords'
 
 import { createChannel } from '@/core/lib/channel'
-import { createAtom } from '@handwave/system'
 import { particleIntentsV2 } from '@/core/lib/intent/intents/particleIntents'
 
 // ============================================================================
@@ -231,7 +231,7 @@ export const runtimeResource = defineResource({
         blendshapesDisplayTask,
         handCoordinatesTask,
         // Intent Engine tasks
-        createPinchRingsTask(frameHistory),
+        createPinchRingsTask(),
         createGestureDurationTask(frameHistory),
         // Particle system (toggleable with 'p' key)
         ...(currentState.particlesEnabled

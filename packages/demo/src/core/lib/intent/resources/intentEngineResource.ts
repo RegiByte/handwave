@@ -147,7 +147,9 @@ export const intentEngineResource = defineResource({
     }
 
     // Poll for new frames (~60 FPS)
-    const intervalId = setInterval(processLatestFrame, 16)
+    const unsubscribeFrameHistory = frameHistory.subscribe((_frame) => {
+      processLatestFrame()
+    })
 
     console.log('[Intent Engine v2] ✅ Started')
 
@@ -180,7 +182,7 @@ export const intentEngineResource = defineResource({
       cleanup: () => {
         console.log('[Intent Engine v2] Stopping...')
         intentEvents.clear()
-        clearInterval(intervalId)
+        unsubscribeFrameHistory()
       },
     }
 

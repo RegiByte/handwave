@@ -10,7 +10,7 @@
 import type { StartedResource } from 'braided';
 import { defineResource } from 'braided'
 import type { Detection, GestureRecognizerResult } from '@mediapipe/tasks-vision'
-import type { FrameSnapshot } from '@handwave/intent-engine'
+import type { FrameSnapshot, HandIdentifier } from '@handwave/intent-engine'
 import {
   addFrame,
   checkAnyInWindow,
@@ -21,8 +21,9 @@ import {
   getFramesInWindow,
   getHistoryDuration,
   getLatestFrame,
+  intentKeywords,
 } from '@handwave/intent-engine'
-import { createAtom } from '@handwave/system'
+import { createAtom, createSubscription, Subscription, SubscriptionCallback } from '@handwave/system'
 import type { LoopResource } from '@/core/lib/mediapipe/resources/loop'
 import type { DetectionWorkerResource } from '@/core/lib/mediapipe/resources/detectionWorker'
 
@@ -54,6 +55,8 @@ export type FrameHistoryAPI = {
   // Utility
   getHistoryDuration: () => number
   getAverageFPS: () => number
+
+  subscribe: Subscription<FrameSnapshot>['subscribe']
 }
 
 // ============================================================================
@@ -67,6 +70,7 @@ export const frameHistoryResource = defineResource({
 
     const MAX_FRAMES = 300 // ~10 seconds at 30 FPS
     const history = createAtom<Array<FrameSnapshot>>([])
+    const historySubscription = createSubscription<FrameSnapshot>()
 
     /**
      * Enrich MediaPipe gesture result with handIndex and gesture info
@@ -108,9 +112,14 @@ export const frameHistoryResource = defineResource({
         const gesture = gestureObj?.categories?.[0]
 
         if (!landmarks) continue
+        const categoryName = handedness?.categoryName?.toLowerCase()
+        // invalid handedness
+        if (![intentKeywords.hands.left, intentKeywords.hands.right].includes(categoryName as HandIdentifier)) {
+          continue
+        }
 
         hands.push({
-          handedness: handedness?.categoryName === 'Left' ? 'left' : 'right',
+          handedness: categoryName as HandIdentifier,
           handIndex: i,
           headIndex: (handednessObj as any)?.headIndex ?? 0, // Track which person (0-1 for 2 heads)
           gesture: gesture?.categoryName || 'None',
@@ -135,7 +144,7 @@ export const frameHistoryResource = defineResource({
     }
 
     // Subscribe to loop frame events
-    const unsubscribe = loop.frame$.subscribe((frameData: any) => {
+    const unsubscribe = loop.frame$.subscribe((frameData) => {
       const snapshot: FrameSnapshot = {
         timestamp: frameData.timestamp,
         faceResult: frameData.faceResult,
@@ -143,7 +152,7 @@ export const frameHistoryResource = defineResource({
       }
       history.set(addFrame(history.get(), snapshot, MAX_FRAMES))
 
-
+      historySubscription.notify(snapshot)
     })
 
     console.log('[FrameHistory] ✅ Started')
@@ -154,6 +163,7 @@ export const frameHistoryResource = defineResource({
       getHistory: () => history.get(),
       getLatestFrame: () => getLatestFrame(history.get()),
       getFrameAgo: (n: number) => getFrameAgo(history.get(), n),
+      subscribe: historySubscription.subscribe,
 
       // Temporal queries
       getFramesInWindow: (durationMs: number) =>
@@ -168,6 +178,7 @@ export const frameHistoryResource = defineResource({
       // Utility
       getHistoryDuration: () => getHistoryDuration(history.get()),
       getAverageFPS: () => getAverageFPS(history.get()),
+
     }
 
     return {
