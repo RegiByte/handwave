@@ -23,7 +23,8 @@ import {
   getLatestFrame,
   intentKeywords,
 } from '@handwave/intent-engine'
-import { createAtom, createSubscription, Subscription, SubscriptionCallback } from '@handwave/system'
+import { createAtom, createSubscription } from '@handwave/system'
+import type { Subscription } from '@handwave/system';
 import type { LoopResource } from '@/core/lib/mediapipe/resources/loop'
 import type { DetectionWorkerResource } from '@/core/lib/mediapipe/resources/detectionWorker'
 

@@ -63,8 +63,8 @@ export const GESTURE_CALIBRATIONS: Record<string, GestureCalibration> = {
     observedMax: 0.920,
     observedMean: 0.859,
     observedStdDev: 0.050,
-    minThreshold: 0.75, // Conservative: at observed min
-    recommendedThreshold: 0.75, // Reliable: mean - 1 std dev
+    minThreshold: 0.70, // Conservative: at observed min
+    recommendedThreshold: 0.55, // Reliable: mean - 1 std dev
     highQualityThreshold: 0.88, // High quality: near mean + 0.5 std dev
     notes:
       'Excellent gesture! 100% >0.7, 81.3% >0.8, 34.0% >0.9. Very reliable detection.',

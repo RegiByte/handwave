@@ -83,6 +83,7 @@ export type {
   // Subscription types (DSL-specific)
   EventCallback,
   Unsubscribe,
+  EventSubscriptionAPI,
 } from './types'
 
 // Note: The following types are available from other modules:

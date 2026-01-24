@@ -31,4 +31,4 @@ export * from './debug/multi-grid-overlay'
 // Intent Engine tasks
 export * from './pinch-rings'
 export * from './gesture-duration'
-export * from './particles'
+export * from './particles/particles'

@@ -10,6 +10,8 @@
  * - No central governor needed
  * - 100% type-safe by design
  */
+import type { Expand } from '@/core/types'
+
 
 // ============================================================================
 // PRIMITIVE TYPES (from vocabulary, re-exported for convenience)
@@ -306,11 +308,6 @@ export interface IntentDef<
   /** Conflict resolution policy */
   resolution?: ResolutionConfig
 }
-
-// ============================================================================
-// INTENT OBJECT (with derived events)
-// ============================================================================
-
 /**
  * Intent object with type-safe event accessors.
  * This is what `intent()` returns.
@@ -386,8 +383,62 @@ export type DescriptorEvent<T> = T extends IntentEventDescriptor<infer E> ? E : 
 // ENGINE SUBSCRIPTION TYPES
 // ============================================================================
 
-/** Event callback type */
-export type EventCallback<TEvent> = (event: TEvent) => void
+/**
+ * Expand utility - flattens type aliases for better IDE hover display.
+ * Re-exported from core for convenience.
+ */
+
+/** Event callback type with expanded type display */
+export type EventCallback<TEvent> = (event: Expand<TEvent>) => void
 
 /** Unsubscribe function */
 export type Unsubscribe = () => void
+
+/**
+ * Type-safe event subscription API.
+ * Accepts event descriptors and provides fully typed callbacks.
+ */
+export type EventSubscriptionAPI = {
+  /**
+   * Subscribe to a specific event using an event descriptor.
+   * 
+   * @example
+   * ```ts
+   * const vortexIntent = intent({ id: 'vortex', pattern: ... })
+   * 
+   * // Subscribe to start event
+   * engine.subscribe(vortexIntent.events.start, (event) => {
+   *   // event is typed as StandardStartEvent<'vortex'>
+   *   console.log(event.position, event.hand)
+   * })
+   * 
+   * // Subscribe to all events
+   * engine.subscribe(vortexIntent.events.all, (event) => {
+   *   // event is union: StandardStartEvent | StandardUpdateEvent | StandardEndEvent
+   *   if (event.type.endsWith(':start')) {
+   *     // Handle start
+   *   }
+   * })
+   * ```
+   */
+  subscribe: <TEvent>(
+    descriptor: IntentEventDescriptor<TEvent>,
+    callback: EventCallback<TEvent>
+  ) => Unsubscribe
+
+  /**
+   * Subscribe to multiple event descriptors at once.
+   * Returns a single unsubscribe function that removes all subscriptions.
+   * 
+   * @example
+   * ```ts
+   * engine.subscribeMany([
+   *   [vortexIntent.events.start, handleVortexStart],
+   *   [spawnIntent.events.start, handleSpawnStart],
+   * ])
+   * ```
+   */
+  subscribeMany: <TEvent>(
+    subscriptions: Array<[IntentEventDescriptor<TEvent>, EventCallback<TEvent>]>
+  ) => Unsubscribe
+}

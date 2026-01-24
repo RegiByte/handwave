@@ -5,8 +5,6 @@
  * Handles gesture, pinch, anyOf, and allOf patterns.
  */
 
-import { intentKeywords } from '@handwave/intent-engine'
-import type { FrameSnapshot } from '@handwave/intent-engine'
 import type {
   CompositePatternDef,
   GestureName,
@@ -18,6 +16,8 @@ import type {
   Position,
   SequencePatternDef,
 } from './types'
+import { intentKeywords } from '@handwave/intent-engine'
+import type { FrameSnapshot } from '@handwave/intent-engine'
 
 // ============================================================================
 // MAIN MATCHING FUNCTION
@@ -36,7 +36,7 @@ export function matchPatternExpr(
 ): boolean {
   const def = pattern._intent.def
   const result = matchPatternDef(frame, def)
-  
+
   return result
 }
 
@@ -274,7 +274,7 @@ function findPrimaryPattern(
     if (pattern._intent.isPrimary) {
       return pattern
     }
-    
+
     // Recursively check composite patterns
     const def = pattern._intent.def
     if (def.type === 'allOf' || def.type === 'anyOf' || def.type === 'sequence') {
@@ -285,7 +285,7 @@ function findPrimaryPattern(
         } else {
           for (const subPattern of def.patterns) {
             const matches = matchPatternExpr(frame, subPattern)
-            
+
             // Only search this branch if it matches
             if (matches) {
               const nested = findPrimaryPattern([subPattern], frame, true)
@@ -298,7 +298,7 @@ function findPrimaryPattern(
           continue
         }
       }
-      
+
       // For allOf and sequence, search all patterns
       // But if we're inside an anyOf and this allOf doesn't match, skip it
       if ((def.type === 'allOf' || def.type === 'sequence') && isInsideAnyOf && frame) {
@@ -307,14 +307,14 @@ function findPrimaryPattern(
           continue
         }
       }
-      
+
       const nested = findPrimaryPattern(def.patterns, frame, isInsideAnyOf)
       if (nested) {
         return nested
       }
     }
   }
-  
+
   return null
 }
 
@@ -350,13 +350,13 @@ export function calculateGesturePosition(
       if (primaryPattern) {
         return calculateGesturePosition(primaryPattern._intent.def, landmarks, frame)
       }
-      
+
       // Legacy: check primaryIndex
       if (def.primaryIndex !== undefined && def.patterns[def.primaryIndex]) {
         const indexedPrimary = def.patterns[def.primaryIndex]
         return calculateGesturePosition(indexedPrimary._intent.def, landmarks, frame)
       }
-      
+
       // Otherwise use wrist (default)
       return landmarks[0]
     }
@@ -399,21 +399,45 @@ function calculateGestureSpecificPosition(
       // Midpoint between index and middle fingertips
       // This creates a natural spawn point between the two fingers
       // for particle effects - feels more intuitive than palm center
-      const indexTip = landmarks[8]
-      const middleTip = landmarks[12]
-      return {
-        x: (indexTip.x + middleTip.x) / 2,
-        y: (indexTip.y + middleTip.y) / 2,
-        z: (indexTip.z + middleTip.z) / 2,
-      }
+      return getMiddleIndexCenter(landmarks)
     }
 
     case 'ILoveYou':
       // Center of palm (default)
-      return landmarks[0]
+      return getPinkyIndexCenter(landmarks)
 
     default:
       return landmarks[0]
+  }
+}
+
+/**
+ * Get the center of the index and middle fingertips.
+ */
+export function getMiddleIndexCenter(
+  landmarks: Array<{ x: number; y: number; z: number }>
+): Position {
+  const indexTip = landmarks[8]
+  const middleTip = landmarks[12]
+  return {
+    x: (indexTip.x + middleTip.x) / 2,
+    y: (indexTip.y + middleTip.y) / 2,
+    z: (indexTip.z + middleTip.z) / 2,
+  }
+}
+
+/**
+ * Get the center of the pinky and index fingertips.
+ */
+export function getPinkyIndexCenter(
+  landmarks: Array<{ x: number; y: number; z: number }>
+): Position {
+  const pinkyTip = landmarks[20]
+  const indexTip = landmarks[8]
+  return {
+    x: (pinkyTip.x + indexTip.x) / 2, 
+    y: (pinkyTip.y + indexTip.y) / 2,
+    z: (pinkyTip.z + indexTip.z) / 2,
   }
 }
 
@@ -470,36 +494,36 @@ export function extractAllMatchingHands(
       for (const branchPattern of def.patterns) {
         const branchDef = branchPattern._intent.def
         const branchMatches = matchPatternExpr(frame, branchPattern)
-        
+
         if (branchMatches) {
           // Check if this branch is a simple pattern with 'any' hand
-          const isSimpleAnyPattern = 
+          const isSimpleAnyPattern =
             (branchDef.type === 'gesture' || branchDef.type === 'pinch') &&
             'hand' in branchDef &&
             branchDef.hand === 'any'
-          
+
           if (isSimpleAnyPattern) {
             // console.log('[extractAllMatchingHands] anyOf matched simple "any" pattern, extracting all hands')
             // Extract all hands that match this simple pattern
             return extractAllMatchingHands(frame, branchPattern)
           }
-          
+
           // Otherwise, treat as composite (only extract primary hand)
           break
         }
       }
     }
-    
+
     // Default composite behavior: return only the primary hand
     // console.log('[extractAllMatchingHands] treating as composite, extracting primary hand only')
     const singleHand = extractMatchedHandFromPattern(frame, pattern)
     if (!singleHand) return []
-    
+
     // Add headIndex from the frame data
     const frameHand = gestureResult.hands.find(
       h => h.handIndex === singleHand.handIndex
     )
-    
+
     return [{
       ...singleHand,
       headIndex: frameHand?.headIndex ?? 0
@@ -532,7 +556,7 @@ export function extractAllMatchingHands(
     // For gesture patterns, verify the gesture matches
     if (def.type === 'gesture') {
       const gestureDef = def
-      
+
       if (
         hand.gesture === gestureDef.gesture &&
         hand.gestureScore >= gestureDef.confidence
@@ -616,7 +640,7 @@ export function extractMatchedHandFromPattern(
     // First, try to find a pattern marked with .primary()
     // Pass frame so anyOf patterns only search matching branches
     const primaryPattern = findPrimaryPattern([pattern], frame)
-    
+
     if (primaryPattern) {
       const primaryDef = primaryPattern._intent.def
       if ('hand' in primaryDef && primaryDef.hand !== 'any') {
@@ -624,7 +648,7 @@ export function extractMatchedHandFromPattern(
         primaryHand = (primaryHandedness === 'right' ? rightHand : leftHand) ?? null
       }
     }
-    
+
     // Legacy: If primaryIndex is specified, use that sub-pattern to determine the hand
     if (!primaryHand && def.primaryIndex !== undefined && def.patterns[def.primaryIndex]) {
       const indexedPrimary = def.patterns[def.primaryIndex]._intent.def

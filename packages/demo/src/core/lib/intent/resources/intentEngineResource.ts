@@ -10,35 +10,25 @@ import type {
   ActiveAction,
   ConflictResolutionConfig,
   Intent,
-  StandardEndEvent,
-  StandardStartEvent,
-  StandardUpdateEvent,
+  IntentEventDescriptor,
+  Unsubscribe,
 } from '@handwave/intent-engine'
 import { processFrameV2 } from '@handwave/intent-engine'
-import { createAtom, createSubscription } from '@handwave/system'
+import { createAtom, createEventBus } from '@handwave/system'
+import type { EventCallback } from '@handwave/system';
 import type { FrameHistoryResource } from '@/core/lib/intent/resources/frameHistoryResource'
-
-// ============================================================================
-// Types
-// ============================================================================
-
-type IntentEventCallback = (event: any) => void
-type UnsubscribeFn = () => void
-
-// ============================================================================
-// Types
-// ============================================================================
-
-type AnyEvent = StandardStartEvent | StandardUpdateEvent | StandardEndEvent
 
 export type IntentEngineAPI = {
   // Configuration
   configure: (intents: Array<Intent>, config?: Partial<ConflictResolutionConfig>) => void
 
-  // Event subscription
-  on: (eventType: string, callback: IntentEventCallback) => UnsubscribeFn
-  onAny: (callback: IntentEventCallback) => UnsubscribeFn
+  // Type-safe event subscription (NEW!)
+  subscribe: <TEvent>(
+    descriptor: IntentEventDescriptor<TEvent>,
+    callback: EventCallback<TEvent>
+  ) => Unsubscribe
 
+ 
   // State access
   getActiveActions: () => Map<string, ActiveAction>
   getConfig: () => ConflictResolutionConfig
@@ -64,7 +54,11 @@ export const intentEngineResource = defineResource({
 
     // State
     const activeActions = createAtom<Map<string, ActiveAction>>(new Map())
-    const intentEvents = createSubscription<AnyEvent>()
+    const eventBus = createEventBus({
+      onError: (error, event) => {
+        console.error('[Intent Engine] Event callback error:', error, 'Event:', event)
+      },
+    })
 
     // Configuration
     let intents: Array<Intent> = []
@@ -137,9 +131,9 @@ export const intentEngineResource = defineResource({
         // Update state
         activeActions.set(result.actions)
 
-        // Emit events
+        // Emit events through the event bus
         result.events.forEach((event) => {
-          intentEvents.notify(event)
+          eventBus.emit(event.type, event)
         })
       } finally {
         processing = false
@@ -163,16 +157,12 @@ export const intentEngineResource = defineResource({
         console.log('[Intent Engine v2] Configured with', intents.length, 'intents')
       },
 
-      on: (eventType: string, callback: IntentEventCallback): UnsubscribeFn => {
-        return intentEvents.subscribe((event) => {
-          if (event.type === eventType) {
-            callback(event)
-          }
-        })
-      },
-
-      onAny: (callback: IntentEventCallback): UnsubscribeFn => {
-        return intentEvents.subscribe((event) => callback(event as any))
+      // Type-safe subscription using event descriptors
+      subscribe: <TEvent>(
+        descriptor: IntentEventDescriptor<TEvent>,
+        callback: EventCallback<TEvent>
+      ): Unsubscribe => {
+        return eventBus.subscribe(descriptor, callback)
       },
 
       getActiveActions: () => new Map(activeActions.get()),
@@ -181,7 +171,7 @@ export const intentEngineResource = defineResource({
 
       cleanup: () => {
         console.log('[Intent Engine v2] Stopping...')
-        intentEvents.clear()
+        eventBus.clear()
         unsubscribeFrameHistory()
       },
     }

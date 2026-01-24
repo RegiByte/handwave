@@ -46,7 +46,7 @@ export const spawnParticlesSimple = intent({
     minDuration: defaultDuration,
     maxGap: defaultMaxGap,
   },
-  resolution: { 
+  resolution: {
     group: intentGroups.spawn,
     priority: 0, // Lowest priority - fallback spawn
   },
@@ -67,17 +67,34 @@ export const vortexParticles = intent({
 })
 
 /**
- * Finger Vortex: Middle pinch creates a localized vortex at the index finger tip.
+ * Finger Vortex (Left Hand): Victory gesture creates logarithmic spiral (golden ratio).
  * 
- * Single-hand gesture - pinch middle finger and the index finger tip becomes a vortex point.
- * Both hands can create independent finger vortexes simultaneously!
- * Useful for fine-grained particle manipulation.
+ * Left hand creates a beautiful golden spiral - like a nautilus shell or galaxy arm.
+ * Particles gently flow along the golden ratio spiral path.
  * 
  * Priority 5: Higher than hand vortex - more specific gesture takes precedence.
  */
-export const fingerVortex = intent({
-  id: 'particles:vortex:finger',
-  pattern: pinches.middle.withHand('any').primary(),
+export const fingerVortexLeft = intent({
+  id: 'particles:vortex:finger:left',
+  pattern: gestures.victory.withHand('left').primary(),
+  temporal: {
+    minDuration: defaultDuration * 4,
+    maxGap: defaultMaxGap,
+  },
+  resolution: { group: intentGroups.vortex },
+})
+
+/**
+ * Finger Vortex (Right Hand): Victory gesture creates Lorenz Attractor (chaotic butterfly).
+ * 
+ * Right hand creates the famous strange attractor with figure-8 butterfly patterns.
+ * Particles follow chaotic trajectories with unpredictable transitions between lobes.
+ * 
+ * Priority 5: Higher than hand vortex - more specific gesture takes precedence.
+ */
+export const fingerVortexRight = intent({
+  id: 'particles:vortex:finger:right',
+  pattern: gestures.victory.withHand('right').primary(),
   temporal: {
     minDuration: defaultDuration * 4,
     maxGap: defaultMaxGap,
@@ -120,112 +137,6 @@ export const clearParticles = intent({
     maxGap: defaultMaxGap * 2,
   },
 })
-
-// ============================================================================
-// PINCH SPAWN INTENTS (Different Colors)
-// ============================================================================
-
-// Note: Pinch patterns now use calibrated thresholds by default:
-// - index: 0.06 (most reliable)
-// - middle: 0.055 (good precision)
-// - ring: 0.09 (needs loose threshold due to biomechanics)
-// - pinky: 0.075 (limited range of motion)
-
-/**
- * Index pinch spawns blue particles
- */
-export const spawnBlueParticlesLeft = intent({
-  id: 'particles:spawn:blue:left',
-  pattern: pinches.index.withHand('left'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-export const spawnBlueParticlesRight = intent({
-  id: 'particles:spawn:blue:right',
-  pattern: pinches.index.withHand('right'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-/**
- * Middle pinch spawns green particles
- */
-export const spawnGreenParticlesLeft = intent({
-  id: 'particles:spawn:green:left',
-  pattern: pinches.middle.withHand('left'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-export const spawnGreenParticlesRight = intent({
-  id: 'particles:spawn:green:right',
-  pattern: pinches.middle.withHand('right'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-/**
- * Ring pinch spawns red particles
- */
-export const spawnRedParticlesLeft = intent({
-  id: 'particles:spawn:red:left',
-  pattern: pinches.ring.withHand('left'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-export const spawnRedParticlesRight = intent({
-  id: 'particles:spawn:red:right',
-  pattern: pinches.ring.withHand('right'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-/**
- * Pinky pinch spawns yellow particles
- */
-export const spawnYellowParticlesLeft = intent({
-  id: 'particles:spawn:yellow:left',
-  pattern: pinches.pinky.withHand('left'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-export const spawnYellowParticlesRight = intent({
-  id: 'particles:spawn:yellow:right',
-  pattern: pinches.pinky.withHand('right'),
-  temporal: {
-    minDuration: defaultDuration,
-    maxGap: defaultMaxGap,
-  },
-  resolution: { group: 'spawn' },
-})
-
-// ============================================================================
-// TWO-HAND MODIFIER INTENTS (Bidirectional)
-// ============================================================================
 
 /**
  * Bidirectional Two-Hand Paradigm for Colored Particle Spawning:
@@ -304,7 +215,7 @@ export const spawnRedWithModifier = intent({
   pattern: bidirectional(
     pinches.ring,
     gestures.pointingUp
-  ).or(gestures.victory.withHand('any').primary()),
+  ).or(gestures.iLoveYou.withHand('any').primary()),
   temporal: {
     minDuration: defaultDuration,
     maxGap: defaultMaxGap,
@@ -364,7 +275,8 @@ export const spawnFromFaceOutline = intent({
 export const particleIntentsV2 = [
   // Gesture intents (works with any hand - engine creates per-hand instances)
   vortexParticles,
-  fingerVortex,
+  fingerVortexLeft,
+  fingerVortexRight,
   repelParticles,
   clearParticles,
   // Two-hand modifier intents (bidirectional - either hand can be modifier/action)
@@ -385,7 +297,8 @@ export const particleIntentsV2 = [
 // These types can be used for type-safe event handling
 export type SpawnIntentSimple = typeof spawnParticlesSimple
 export type VortexIntent = typeof vortexParticles
-export type FingerVortexIntent = typeof fingerVortex
+export type FingerVortexLeftIntent = typeof fingerVortexLeft
+export type FingerVortexRightIntent = typeof fingerVortexRight
 export type RepelIntent = typeof repelParticles
 export type ClearIntent = typeof clearParticles
 

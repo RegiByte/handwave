@@ -26,11 +26,6 @@ import type {
   TemporalConfig,
 } from "@handwave/intent-engine"
 
-
-// ============================================================================
-// Intent Type (with lifecycle hooks)
-// ============================================================================
-
 /**
  * Intent definition with lifecycle hooks
  *
@@ -55,10 +50,6 @@ export type Intent<
   onUpdate: (context: ActionContext) => TUpdate
   onEnd: (context: ActionContext & { reason: EndReason }) => TEnd
 }
-
-// ============================================================================
-// Intent Engine API Types
-// ============================================================================
 
 /**
  * Intent engine public API
@@ -93,11 +84,6 @@ export type IntentEventCallback = (event: IntentEvent) => void
  * Unsubscribe function
  */
 export type UnsubscribeFn = () => void
-
-// ============================================================================
-// Internal State Types
-// ============================================================================
-
 /**
  * Hysteresis state (for stable cell tracking)
  */
@@ -115,10 +101,6 @@ export type FrameProcessingResult = {
   updatedActions: Map<string, ActiveAction>
 }
 
-// ============================================================================
-// Type Guards
-// ============================================================================
-
 /**
  * Check if pattern is a gesture pattern
  */
@@ -132,3 +114,7 @@ export function isGesturePattern(pattern: Pattern): pattern is GesturePattern {
 export function isContactPattern(pattern: Pattern): pattern is ContactPattern {
   return pattern.type === 'contact'
 }
+
+export type Expand<T> = {
+  [K in keyof T]: T[K]
+} & {};
