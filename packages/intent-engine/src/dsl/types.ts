@@ -10,7 +10,7 @@
  * - No central governor needed
  * - 100% type-safe by design
  */
-import type { Expand } from '@/core/types'
+import type { Expand } from '../core/types'
 
 
 // ============================================================================

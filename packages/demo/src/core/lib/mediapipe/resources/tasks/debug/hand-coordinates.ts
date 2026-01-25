@@ -1,4 +1,4 @@
-import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
+import type { RenderTask } from '../types'
 
 /**
  * Render task: Show detailed 3D coordinates for hand landmarks

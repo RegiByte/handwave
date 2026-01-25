@@ -1,6 +1,5 @@
 import type { RenderTask } from './types'
-import { GESTURE_NAMES } from '@/core/lib/mediapipe/shared'
-import type { Category } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
+import { GESTURE_NAMES, type Category } from '@handwave/mediapipe'
 
 /**
  * Render task: Show gesture labels with handedness

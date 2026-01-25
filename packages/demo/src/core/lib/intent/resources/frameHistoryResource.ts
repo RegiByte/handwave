@@ -25,8 +25,7 @@ import {
 } from '@handwave/intent-engine'
 import { createAtom, createSubscription } from '@handwave/system'
 import type { Subscription } from '@handwave/system';
-import type { LoopResource } from '@/core/lib/mediapipe/resources/loop'
-import type { DetectionWorkerResource } from '@/core/lib/mediapipe/resources/detectionWorker'
+import type { LoopResource, DetectionWorkerResource } from '@handwave/mediapipe'
 
 // ============================================================================
 // Types

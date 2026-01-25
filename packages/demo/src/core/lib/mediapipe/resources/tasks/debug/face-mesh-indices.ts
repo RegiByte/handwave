@@ -1,6 +1,6 @@
 import { FaceLandmarker } from '@mediapipe/tasks-vision'
-import { transformLandmarksToViewport } from '@/core/lib/mediapipe/resources/tasks/utils'
-import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
+import { transformLandmarksToViewport } from '@handwave/mediapipe'
+import type { RenderTask } from '../types'
 
 /**
  * Debug render task: Show face mesh with vertex indices

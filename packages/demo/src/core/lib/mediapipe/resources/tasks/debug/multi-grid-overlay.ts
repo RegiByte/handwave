@@ -1,8 +1,8 @@
 import type { GestureRecognizerResult } from '@mediapipe/tasks-vision'
 import type { GridConfig, GridResolution } from '@handwave/intent-engine';
 import { DEFAULT_GRID_PRESETS, intentKeywords } from '@handwave/intent-engine'
-import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
-import type { SpatialUpdateMessage } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
+import type { RenderTask } from '../types'
+import type { SpatialUpdateMessage } from '@handwave/mediapipe'
 
 /**
  * Render task: Multi-Resolution Grid Overlay

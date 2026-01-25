@@ -2,7 +2,8 @@ import type {
   FaceLandmarkerResult,
   GestureRecognizerResult,
 } from '@mediapipe/tasks-vision'
-import type { CanvasAPI, FrameRaterAPI } from '@handwave/mediapipe'
+import type { CanvasAPI } from '../detection/canvas'
+import type { FrameRaterAPI } from '../detection/frameRater'
 
 export type RenderContext = {
   ctx: CanvasRenderingContext2D

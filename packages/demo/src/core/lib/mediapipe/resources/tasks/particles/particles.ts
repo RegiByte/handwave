@@ -60,9 +60,8 @@ import {
   renderTripleAxisSpiralOverlay,
   renderVortexOverlay,
 } from './particleRendering'
-import { mapLandmarkToViewport } from '@/core/lib/mediapipe/resources/tasks/utils'
-import { getFaceOvalIndices } from '@/core/lib/mediapipe/resources/tasks/face-mesh'
-import type { RenderContext } from '@/core/lib/mediapipe/resources/tasks/types'
+import { mapLandmarkToViewport, type RenderContext } from '@handwave/mediapipe'
+import { getFaceOvalIndices } from '../face-mesh'
 
 // Intent imports
 import type { IntentEngineAPI } from '@/core/lib/intent/resources/intentEngineResource'

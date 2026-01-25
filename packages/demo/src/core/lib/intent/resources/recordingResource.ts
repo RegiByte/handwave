@@ -13,8 +13,7 @@ import type { Detection, GestureRecognizerResult } from '@mediapipe/tasks-vision
 import type { HandCellInfo, RecordedFrame, RecordedHand, RecordingSession } from '@handwave/intent-engine'
 import { normalizedToCellByResolution } from '@handwave/intent-engine'
 import { createAtom } from '@handwave/system'
-import type { LoopResource } from '@/core/lib/mediapipe/resources/loop'
-import type { DetectionWorkerResource } from '@/core/lib/mediapipe/resources/detectionWorker'
+import type { LoopResource, DetectionWorkerResource } from '@handwave/mediapipe'
 
 // ============================================================================
 // Types

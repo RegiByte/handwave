@@ -1,41 +1,47 @@
 /**
- * MediaPipe System Configuration
+ * MediaPipe System Configuration (Demo)
  *
- * This file defines the complete system graph for MediaPipe face/hand tracking.
+ * This file extends the base MediaPipe system with demo-specific resources.
  * Resources are started in dependency order and halted in reverse order.
  *
  * Dependency Graph:
  *
- *   camera (no deps)
+ *   camera (no deps) ← from @handwave/mediapipe
  *       ↓
- *   detectionWorker (no deps) - Web Worker for MediaPipe detection
+ *   detectionWorker (no deps) ← from @handwave/mediapipe
  *       ↓
- *   canvas (no deps)
+ *   canvas (no deps) ← from @handwave/mediapipe
  *       ↓
- *   loop ← camera, detectionWorker, canvas
+ *   frameRater (no deps) ← from @handwave/mediapipe
  *       ↓
- *   runtime ← camera, loop, detectionWorker
+ *   loop ← camera, detectionWorker, canvas, frameRater ← from @handwave/mediapipe
  *       ↓
- *   shortcuts ← runtime
+ *   runtime ← camera, loop, detectionWorker (demo-specific)
+ *       ↓
+ *   shortcuts ← runtime (demo-specific)
+ *       ↓
+ *   recording, frameHistory, intentEngine (demo-specific)
  *
- * Note: Detection now runs in Web Worker for 60 FPS rendering!
+ * Note: Detection runs in Web Worker for 60 FPS rendering!
  * The worker loads MediaPipe models independently and processes frames off the main thread.
  */
 
 import type { StartedSystem } from 'braided'
 import { createSystemHooks, createSystemManager } from 'braided-react'
-import { cameraResource } from './resources/camera'
-import { canvasResource } from './resources/canvas'
-import { detectionWorkerResource } from './resources/detectionWorker'
-import { frameRater } from './resources/frameRater'
-import { loopResource } from './resources/loop'
+import {
+  cameraResource,
+  canvasResource,
+  detectionWorkerResource,
+  frameRater,
+  loopResource,
+} from '@handwave/mediapipe'
 import { runtimeResource } from './resources/runtime'
 import { shortcutsResource } from './resources/shortcuts'
 import { recordingResource } from '@/core/lib/intent/resources/recordingResource'
 import { frameHistoryResource } from '@/core/lib/intent/resources/frameHistoryResource'
 import { intentEngineResource } from '@/core/lib/intent/resources/intentEngineResource'
 
-// System configuration - defines the resource graph
+// System configuration - extends base MediaPipe with demo-specific resources
 export const mediapipeSystemConfig = {
   camera: cameraResource,
   detectionWorker: detectionWorkerResource,

@@ -1,5 +1,5 @@
-import { mapLandmarkToViewport } from '@/core/lib/mediapipe/resources/tasks/utils'
-import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
+import { mapLandmarkToViewport } from '@handwave/mediapipe'
+import type { RenderTask } from '../types'
 
 /**
  * Render task: Show face landmark indices (only key landmarks to avoid clutter)

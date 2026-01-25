@@ -7,6 +7,7 @@
  * Philosophy: Simple rules compose. Newtonian physics with inverse square law.
  */
 
+import { Detection, GestureRecognizerResult } from '@mediapipe/tasks-vision'
 import type { Force, ParticleArrays } from './particleState'
 import {
   DAMPING,
@@ -590,16 +591,16 @@ export function assignParticlesToVortexes(
  * @returns Position with offset applied, or null if landmarks not found
  */
 export function getFingerVortexPosition(
-  gestureResult: any,
+  gestureResult: GestureRecognizerResult,
   hand: 'left' | 'right',
   handIndex: number,
   offsetDistance: number = 0.15
 ): { x: number; y: number } | null {
-  if (!gestureResult?.landmarks || !gestureResult?.handednesses) return null
+  if (!gestureResult?.landmarks || !gestureResult?.handedness) return null
 
   // Find the matching hand
   for (let i = 0; i < gestureResult.landmarks.length; i++) {
-    const handednessInfo = gestureResult.handednesses[i]
+    const handednessInfo = gestureResult.handedness[i] as unknown as Detection
     if (!handednessInfo?.categories?.[0]) continue
 
     const handednessLabel = handednessInfo.categories[0].categoryName?.toLowerCase()

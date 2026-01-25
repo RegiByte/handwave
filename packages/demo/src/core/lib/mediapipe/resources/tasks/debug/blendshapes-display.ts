@@ -1,4 +1,4 @@
-import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
+import type { RenderTask } from '../types'
 
 /**
  * Render task: Show all face blendshapes in a scrollable list

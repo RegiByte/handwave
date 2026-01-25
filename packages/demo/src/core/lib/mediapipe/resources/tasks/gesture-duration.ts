@@ -7,7 +7,7 @@
  * Philosophy: Temporal context makes interactions meaningful.
  */
 
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import type { Detection, GestureRecognizerResult, NormalizedLandmark } from '@mediapipe/tasks-vision'
 import type { FrameSnapshot, Vector3 } from '@handwave/intent-engine'
 import type { RenderTask } from './types'
 import { mapLandmarkToViewport } from './utils'
@@ -40,11 +40,11 @@ function calculateCenterOfMass(
  */
 function getGestureForHand(
   handIndex: number,
-  gestureResult: any
+  gestureResult: GestureRecognizerResult
 ): { name: string; score: number } | null {
   if (!gestureResult?.gestures?.[handIndex]) return null
 
-  const gesture = gestureResult.gestures[handIndex]
+  const gesture = gestureResult.gestures[handIndex] as unknown as Detection
   const category = gesture?.categories?.[0]
 
   if (!category) return null
@@ -58,10 +58,10 @@ function getGestureForHand(
 /**
  * Get handedness for a specific hand
  */
-function getHandedness(gestureResult: any, handIndex: number): string {
-  if (!gestureResult?.handednesses?.[handIndex]) return 'Unknown'
+function getHandedness(gestureResult: GestureRecognizerResult, handIndex: number): string {
+  if (!gestureResult?.handedness?.[handIndex]) return 'Unknown'
 
-  const handedness = gestureResult.handednesses[handIndex]
+  const handedness = gestureResult.handedness[handIndex] as unknown as Detection
   const category = handedness?.categories?.[0]
 
   return category?.categoryName || 'Unknown'
