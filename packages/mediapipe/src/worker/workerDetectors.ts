@@ -127,7 +127,6 @@ export const workerDetectors = defineResource({
      * Returns spatial data for progress event reporting
      */
     const detect = (input: DetectionInput): Array<HandSpatialInfo> | null => {
-      const start = performance.now()
       const { detectFace, detectHands } = workerStore.getState().detection
 
       // Get strictly increasing timestamp for MediaPipe
@@ -174,18 +173,12 @@ export const workerDetectors = defineResource({
           rawGestureResult,
           input.timestamp,
         )
-        
+
         return spatialData
       } catch (error) {
         console.error('[WorkerDetectors] Detection error:', error)
         return null
       }
-
-      const processingTimeMs = performance.now() - start
-      workerStore.setLastDetectionTime(processingTimeMs)
-      workerStore.incrementFrameCount()
-      
-      return null // No spatial data if error
     }
 
     /**
@@ -273,17 +266,17 @@ function updateSpatialHash(
       const rawX = trackedLandmark.x
       const rawY = trackedLandmark.y
       const rawZ = trackedLandmark.z
-      
+
       // Step 2: Apply mirroring FIRST (in raw normalized space)
       // This matches what visualization does: mirror before dead zone transform
       const mirroredX = displayContext.mirrored ? 1 - rawX : rawX
       const mirroredY = rawY
-      
+
       // Step 3: Apply dead zone transformation to get safe-zone-normalized coordinates
       const deadZones = displayContext.deadZones
       const safeNormalizedX = (mirroredX - deadZones.left) / (1 - deadZones.left - deadZones.right)
       const safeNormalizedY = (mirroredY - deadZones.top) / (1 - deadZones.top - deadZones.bottom)
-      
+
       // Step 4: Create position in SAFE ZONE coordinate space
       // Now worker and visualization are in the SAME space!
       const position = {

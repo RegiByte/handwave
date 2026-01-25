@@ -19,7 +19,7 @@
 
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
-import { createClientResource, createSubscription } from '@handwave/system'
+import { createWorkerClientResource, createSubscription } from '@handwave/system'
 import { systemTasks } from '../worker/kernel/systemTasks'
 import { detectionKeywords } from '../vocabulary/detectionKeywords'
 import type { SpatialUpdateMessage } from '../vocabulary/detectionSchemas'
@@ -42,7 +42,7 @@ const MODEL_PATHS = {
 }
 
 // Create the worker client with system tasks only
-const workerClient = createClientResource(
+const workerClient = createWorkerClientResource(
   () => import('../worker/kernel/workerScript?worker'),
   systemTasks,
 )

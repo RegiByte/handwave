@@ -51,7 +51,7 @@ type ClientTaskSubscription<TTasks, TName extends keyof TTasks> = {
  *
  * Pure function approach - manages worker lifecycle and message passing
  */
-export function createClientResource<TTasks extends TaskRegistry>(
+export function createWorkerClientResource<TTasks extends TaskRegistry>(
   workerImport: WorkerImportFn,
   _tasks: TTasks,
 ) {

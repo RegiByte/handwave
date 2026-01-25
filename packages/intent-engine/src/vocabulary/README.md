@@ -272,21 +272,225 @@ When refactoring existing code:
 
 ---
 
+## Canonical Detection Types
+
+**New in Session 60:** The intent-engine now defines canonical detection types that all detection adapters must follow.
+
+### Philosophy
+
+Detection adapters (MediaPipe, TensorFlow, custom) transform their native types to our canonical format. This enables:
+
+- **Pluggable detectors** - Swap MediaPipe for other backends
+- **Type safety** - No MediaPipe types leak into public API
+- **Clean architecture** - Adapter pattern with clear boundaries
+- **Future-proof** - Easy to add new detector types
+
+### Structure
+
+Three new files define the canonical detection vocabulary:
+
+#### `detectionKeywords.ts`
+
+Detector types, handedness, gestures, landmarks, blendshapes:
+
+```typescript
+export const detectionKeywords = {
+  detectorTypes: {
+    hand: 'hand',
+    face: 'face',
+    body: 'body',    // future
+    eye: 'eye',      // future
+  },
+  handedness: {
+    left: 'left',
+    right: 'right',
+    unknown: 'unknown',
+  },
+  gestures: {
+    closedFist: 'Closed_Fist',
+    openPalm: 'Open_Palm',
+    // ...
+  },
+  handLandmarks: {
+    wrist: 0,
+    thumbTip: 4,
+    indexTip: 8,
+    // ... 21 landmarks
+  },
+  faceBlendshapes: {
+    neutral: '_neutral',
+    eyeBlinkLeft: 'eyeBlinkLeft',
+    mouthSmileLeft: 'mouthSmileLeft',
+    // ... common blendshapes
+  },
+} as const
+```
+
+#### `detectionSchemas.ts`
+
+Two-tier type system: Raw (adapter output) + Enriched (public API):
+
+```typescript
+// Raw types (what adapters produce)
+export const rawHandDetectionSchema = z.object({
+  handedness: z.enum(['left', 'right', 'unknown']),
+  handednessScore: z.number(),
+  gesture: z.string(),
+  gestureScore: z.number(),
+  landmarks: z.array(landmarkSchema).length(21),
+  worldLandmarks: z.array(landmarkSchema).length(21),
+})
+
+// Enriched types (what public API exposes)
+export const enrichedHandDetectionSchema = rawHandDetectionSchema.extend({
+  handIndex: z.number().int().min(0).max(3),
+  headIndex: z.number().int().min(0).max(1),
+})
+
+// Detection frame (pluggable detectors)
+export const rawDetectionFrameSchema = z.object({
+  timestamp: z.number(),
+  detectors: z.object({
+    hand: z.array(rawHandDetectionSchema).optional(),
+    face: z.array(rawFaceDetectionSchema).optional(),
+    // Future: body, eye, etc.
+  }),
+})
+```
+
+#### `detectionTypes.ts`
+
+Clean type exports:
+
+```typescript
+export type {
+  // Primitives
+  Landmark,
+  Category,
+  TransformationMatrix,
+  // Raw types (adapter output)
+  RawHandDetection,
+  RawFaceDetection,
+  RawDetectionFrame,
+  // Enriched types (public API)
+  EnrichedHandDetection,
+  EnrichedFaceDetection,
+  EnrichedDetectionFrame,
+} from './detectionSchemas'
+```
+
+### Two-Tier Architecture
+
+**Raw Detection Types** (Adapter Output):
+- Minimal structure adapters must produce
+- No metadata, just detection data
+- Stable contract for all adapters
+
+**Enriched Detection Types** (Public API):
+- Adds `handIndex`, `faceIndex`, `headIndex`
+- Convenient for consumers
+- Enrichment happens in frame history
+
+### Usage Example
+
+#### In Adapter (MediaPipe)
+
+```typescript
+import type { RawDetectionFrame } from '@handwave/intent-engine'
+import type { GestureRecognizerResult } from '@mediapipe/tasks-vision'
+
+function transformMediaPipeToCanonical(
+  mpResult: GestureRecognizerResult,
+  timestamp: number
+): RawDetectionFrame {
+  return {
+    timestamp,
+    detectors: {
+      hand: transformHands(mpResult),
+      // face: transformFaces(faceResult),
+    },
+  }
+}
+```
+
+#### In Public API (Frame History)
+
+```typescript
+import { enrichDetectionFrame } from '@handwave/intent-engine'
+import type { EnrichedDetectionFrame } from '@handwave/intent-engine'
+
+// Transform Raw → Enriched
+const enriched = enrichDetectionFrame(rawFrame)
+
+// Consumers get EnrichedDetectionFrame
+export function getLatestFrame(): EnrichedDetectionFrame {
+  return enriched
+}
+```
+
+#### In Consumer Code
+
+```typescript
+import type { EnrichedDetectionFrame } from '@handwave/intent-engine'
+
+function processFrame(frame: EnrichedDetectionFrame) {
+  frame.detectors.hand?.forEach(hand => {
+    console.log(hand.handIndex)    // ✅ Has metadata
+    console.log(hand.gesture)      // ✅ Canonical format
+    console.log(hand.landmarks[8]) // ✅ Index finger tip
+  })
+}
+```
+
+### Benefits
+
+**Pluggable Detectors:**
+- MediaPipe is one implementation
+- Easy to add TensorFlow.js adapter
+- Easy to add custom ML models
+- All follow same contract
+
+**Type Safety:**
+- No MediaPipe types in public API
+- Compiler catches adapter errors
+- Clean boundaries between layers
+
+**Future-Proof:**
+- Add new detectors without breaking changes
+- Support multi-modal detection (hand + face + body)
+- Enable/disable detectors dynamically
+
+**Validation:**
+- Zod schemas for import/export
+- Runtime validation of adapter output
+- Type-safe recording/playback
+
+### Migration Path
+
+**Phase 1 (Session 60):** ✅ Define canonical types  
+**Phase 2 (Session 61):** Create MediaPipe adapter layer  
+**Phase 3 (Session 61):** Update consumers to use canonical types  
+**Phase 4 (Session 61):** Remove MediaPipe type leakage  
+
+---
+
 ## Related Patterns
 
 ### MediaPipe Vocabulary
 
-The MediaPipe system already uses this pattern:
+The MediaPipe package has its own vocabulary for worker communication:
 
-- `src/core/lib/mediapipe/vocabulary/keywords.ts`
-- `src/core/lib/mediapipe/vocabulary/schemas.ts`
+- `packages/mediapipe/src/vocabulary/detectionKeywords.ts` - Worker task names
+- `packages/mediapipe/src/vocabulary/detectionSchemas.ts` - Worker message schemas
 
-### Detection Worker Vocabulary
+**Note:** These are separate from the canonical detection types. The MediaPipe vocabulary is for worker communication, while the canonical types are for detection data.
 
-The detection worker also uses this pattern:
+### Intent Engine Vocabulary
 
-- `src/core/lib/mediapipe/vocabulary/detectionKeywords.ts`
-- `src/core/lib/mediapipe/vocabulary/detectionSchemas.ts`
+The intent engine has its own vocabulary for pattern matching:
+
+- `packages/intent-engine/src/vocabulary/keywords.ts` - Intent keywords
+- `packages/intent-engine/src/vocabulary/schemas.ts` - Intent schemas
 
 ---
 

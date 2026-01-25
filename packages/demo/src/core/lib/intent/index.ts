@@ -19,12 +19,12 @@ export * from '@handwave/intent-engine'
 // Demo-Specific Resources (Braided Framework Bindings)
 // ============================================================================
 
-export { frameHistoryResource } from './resources/frameHistoryResource'
-export type { FrameHistoryAPI } from './resources/frameHistoryResource'
-export { recordingResource } from './resources/recordingResource'
-export type { RecordingResource } from './resources/recordingResource'
-export { intentEngineResource } from './resources/intentEngineResource'
-export type { IntentEngineAPI } from './resources/intentEngineResource'
+export { frameHistoryResource } from '../../../system/resources/frameHistoryResource'
+export type { FrameHistoryAPI } from '../../../system/resources/frameHistoryResource'
+export { recordingResource } from '../../../system/resources/recordingResource'
+export type { RecordingResource } from '../../../system/resources/recordingResource'
+export { intentEngineResource } from '../../../system/resources/intentEngineResource'
+export type { IntentEngineAPI } from '../../../system/resources/intentEngineResource'
 
 // ============================================================================
 // Testing Utilities (Fixtures & Analysis)

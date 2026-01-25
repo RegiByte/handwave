@@ -1,0 +1,117 @@
+
+> @handwave/demo@0.1.0 knip
+> knip
+
+Unused files (26)
+eslint.config.js                                                
+prettier.config.js                                              
+src/core/lib/intent/__fixtures__/gestures/closed-fist-left.ts   
+src/core/lib/intent/__fixtures__/gestures/closed-fist-right.ts  
+src/core/lib/intent/__fixtures__/gestures/none-gesture.ts       
+src/core/lib/intent/__fixtures__/gestures/open-palm-left.ts     
+src/core/lib/intent/__fixtures__/gestures/open-palm-right.ts    
+src/core/lib/intent/__fixtures__/gestures/thumb-down-left.ts    
+src/core/lib/intent/__fixtures__/gestures/thumb-down-right.ts   
+src/core/lib/intent/__fixtures__/gestures/thumb-up-left.ts      
+src/core/lib/intent/__fixtures__/gestures/thumb-up-right.ts     
+src/core/lib/intent/__fixtures__/gestures/victory-left.ts       
+src/core/lib/intent/__fixtures__/gestures/victory-right.ts      
+src/core/lib/intent/__fixtures__/index.ts                       
+src/core/lib/intent/__fixtures__/pinch/left-index-pinch.ts      
+src/core/lib/intent/__fixtures__/pinch/left-middle-pinch.ts     
+src/core/lib/intent/__fixtures__/pinch/left-pinky-pinch.ts      
+src/core/lib/intent/__fixtures__/pinch/left-ring-pinch.ts       
+src/core/lib/intent/__fixtures__/pinch/right-index-pinch.ts     
+src/core/lib/intent/__fixtures__/pinch/right-middle-pinch.ts    
+src/core/lib/intent/__fixtures__/pinch/right-pinky-pinch.ts     
+src/core/lib/intent/__fixtures__/pinch/right-ring-pinch.ts      
+src/core/lib/intent/resources/index.ts                          
+src/core/lib/intent/testing/analysisExamples.ts                 
+src/debug/tasks/smile-overlay.ts                                
+vitest.ts                                                       
+Unused dependencies (7)
+@handwave/intent-engine  package.json:18:6
+@handwave/mediapipe      package.json:19:6
+@handwave/rendering      package.json:20:6
+@handwave/system         package.json:21:6
+@tanstack/react-pacer    package.json:27:6
+emergent                 package.json:35:6
+zod                      package.json:44:6
+Unused devDependencies (7)
+@testing-library/dom       package.json:49:6
+@testing-library/react     package.json:50:6
+@typescript-eslint/parser  package.json:55:6
+@vitest/coverage-v8        package.json:57:6
+@vitest/ui                 package.json:58:6
+jsdom                      package.json:59:6
+vitest                     package.json:63:6
+Unlisted binaries (5)
+vite    package.json
+vitest  package.json
+eslint  package.json
+tsc     package.json
+knip    package.json
+Unused exports (49)
+AlertDialogOverlay                  src/components/ui/alert-dialog.tsx:171:3            
+AlertDialogPortal                   src/components/ui/alert-dialog.tsx:172:3            
+badgeVariants                       src/components/ui/badge.tsx:49:17                   
+buttonVariants                      src/components/ui/button.tsx:52:18                  
+ComboboxGroup                       src/components/ui/combobox.tsx:279:3                
+ComboboxLabel                       src/components/ui/combobox.tsx:280:3                
+ComboboxCollection                  src/components/ui/combobox.tsx:281:3                
+ComboboxSeparator                   src/components/ui/combobox.tsx:283:3                
+ComboboxChips                       src/components/ui/combobox.tsx:284:3                
+ComboboxChip                        src/components/ui/combobox.tsx:285:3                
+ComboboxChipsInput                  src/components/ui/combobox.tsx:286:3                
+ComboboxTrigger                     src/components/ui/combobox.tsx:287:3                
+ComboboxValue                       src/components/ui/combobox.tsx:288:3                
+useComboboxAnchor                   src/components/ui/combobox.tsx:289:3                
+FieldDescription                    src/components/ui/field.tsx:220:3                   
+FieldError                          src/components/ui/field.tsx:221:3                   
+FieldLegend                         src/components/ui/field.tsx:223:3                   
+FieldSeparator                      src/components/ui/field.tsx:224:3                   
+FieldSet                            src/components/ui/field.tsx:225:3                   
+FieldContent                        src/components/ui/field.tsx:226:3                   
+FieldTitle                          src/components/ui/field.tsx:227:3                   
+InputGroupText                      src/components/ui/input-group.tsx:145:3             
+InputGroupTextarea                  src/components/ui/input-group.tsx:147:3             
+SelectLabel                         src/components/ui/select.tsx:184:3                  
+SelectScrollDownButton              src/components/ui/select.tsx:185:3                  
+SelectScrollUpButton                src/components/ui/select.tsx:186:3                  
+SelectSeparator                     src/components/ui/select.tsx:187:3                  
+frameHistoryResource                src/core/lib/intent/index.ts:22:10                  
+recordingResource                   src/core/lib/intent/index.ts:24:10                  
+intentEngineResource                src/core/lib/intent/index.ts:26:10                  
+loadRecording             function  src/core/lib/intent/testing/recordingUtils.ts:19:17 
+validateRecording         function  src/core/lib/intent/testing/recordingUtils.ts:37:17 
+filterFrames              function  src/core/lib/intent/testing/recordingUtils.ts:60:17 
+findGestureFrames         function  src/core/lib/intent/testing/recordingUtils.ts:70:17 
+findCellFrames            function  src/core/lib/intent/testing/recordingUtils.ts:87:17 
+findHandCountFrames       function  src/core/lib/intent/testing/recordingUtils.ts:102:17
+getFramesInTimeRange      function  src/core/lib/intent/testing/recordingUtils.ts:114:17
+createTestFixture         function  src/core/lib/intent/testing/recordingUtils.ts:132:17
+createGestureFixture      function  src/core/lib/intent/testing/recordingUtils.ts:160:17
+getRecordingStats         function  src/core/lib/intent/testing/recordingUtils.ts:180:17
+printRecordingSummary     function  src/core/lib/intent/testing/recordingUtils.ts:222:17
+copyRecordingToClipboard  function  src/core/lib/intent/testing/recordingUtils.ts:265:23
+handSkeletonTask                    src/debug/tasks/hand-custom-connections.ts:116:14   
+fingertipsConnectorsTask            src/debug/tasks/hand-custom-connections.ts:265:14   
+palmHighlightTask                   src/debug/tasks/hand-custom-connections.ts:357:14   
+mediapipeSystemConfig               src/system/system.ts:45:14                          
+mediapipeManager                    src/system/system.ts:59:14                          
+useMediapipeSystem                  src/system/system.ts:63:14                          
+MediapipeSystemProvider             src/system/system.ts:66:19                          
+Unused exported types (12)
+RecordingResource        type  src/core/lib/intent/index.ts:25:15                       
+IntentEngineAPI          type  src/core/lib/intent/index.ts:27:15                       
+RecordingResource        type  src/core/lib/intent/resources/recordingResource.ts:457:13
+SpawnIntentSimple        type  src/particles/particleIntents.ts:305:13                  
+VortexIntent             type  src/particles/particleIntents.ts:306:13                  
+FingerVortexLeftIntent   type  src/particles/particleIntents.ts:307:13                  
+FingerVortexRightIntent  type  src/particles/particleIntents.ts:308:13                  
+RepelIntent              type  src/particles/particleIntents.ts:309:13                  
+ClearIntent              type  src/particles/particleIntents.ts:310:13                  
+ParticleIntent           type  src/particles/particleIntents.ts:312:13                  
+RuntimeState             type  src/system/resources/runtime.ts:43:13                    
+MediapipeSystem          type  src/system/system.ts:70:13                               
+Configuration hints (1)

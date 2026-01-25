@@ -13,3 +13,6 @@ export * from './schemas'
 
 // Recording Schemas
 export * from './recordingSchemas'
+
+// Detection Types (Canonical)
+export * from './detectionTypes'

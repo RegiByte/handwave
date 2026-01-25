@@ -44,7 +44,6 @@ export {
 export {
   createGestureRecognizerResource,
   gestureRecognizerResource,
-  type GestureRecognizerConfig,
   type GestureRecognizerState,
   type GestureRecognizerAPI,
 } from './detection/gesture-recognizer'
@@ -166,6 +165,10 @@ export {
   type HandSpatialInfo,
   type SpatialUpdateMessage,
   type Category,
+  type ModelPaths,
+  type DisplayContext,
+  type FaceLandmarkerConfig,
+  type GestureRecognizerConfig,
 } from './vocabulary/detectionSchemas'
 
 export {
@@ -197,6 +200,10 @@ export {
 export type {
   Matrix,
 } from './types'
+
+export {
+  systemTasks,
+} from './worker/kernel/systemTasks'
 
 // ============================================================================
 // System Configuration

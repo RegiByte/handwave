@@ -5,6 +5,7 @@
  * These schemas define the shape of data passed between main thread and worker.
  */
 
+import { deadZonesSchema } from '@handwave/intent-engine'
 import { z } from 'zod'
 
 // ============================================================================
@@ -149,13 +150,6 @@ export const cellSchema = z.object({
 export type Cell = z.infer<typeof cellSchema>
 
 /**
- * Grid resolution type
- */
-export const gridResolutionSchema = z.enum(['coarse', 'medium', 'fine'])
-
-export type GridResolution = z.infer<typeof gridResolutionSchema>
-
-/**
  * Hand spatial information for a single hand
  * Contains minimal data - main thread reads full data from SharedArrayBuffer
  */
@@ -187,18 +181,6 @@ export type SpatialUpdateMessage = z.infer<typeof spatialUpdateMessageSchema>
 // Display Context Schemas
 // ============================================================================
 
-/**
- * Dead zone configuration
- * Percentages of viewport to exclude from spatial tracking
- */
-export const deadZonesSchema = z.object({
-  top: z.number().min(0).max(1),    // e.g., 0.05 = 5%
-  bottom: z.number().min(0).max(1), // e.g., 0.15 = 15%
-  left: z.number().min(0).max(1),   // e.g., 0.05 = 5%
-  right: z.number().min(0).max(1),  // e.g., 0.05 = 5%
-})
-
-export type DeadZones = z.infer<typeof deadZonesSchema>
 
 /**
  * Display context for worker

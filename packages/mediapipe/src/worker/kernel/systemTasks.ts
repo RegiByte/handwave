@@ -21,10 +21,10 @@ import {
   displayContextSchema,
   faceLandmarkerConfigSchema,
   gestureRecognizerConfigSchema,
-  gridResolutionSchema,
   handSpatialInfoSchema,
   modelPathsSchema,
 } from '../../vocabulary/detectionSchemas'
+import { gridResolutionSchema } from '@handwave/intent-engine'
 
 // ============================================================================
 // Worker-Local State

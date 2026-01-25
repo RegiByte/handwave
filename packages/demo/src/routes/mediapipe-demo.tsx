@@ -6,7 +6,7 @@ import { useAtomState } from '@handwave/system'
 import {
   useMediapipeResource,
   useMediapipeStatus,
-} from '@/core/lib/mediapipe/system'
+} from '@/system/system'
 import { downloadRecording } from '@/core/lib/intent/testing/recordingUtils'
 
 export const Route = createFileRoute('/mediapipe-demo')({

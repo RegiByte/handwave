@@ -2,13 +2,7 @@ import { defineResource } from 'braided'
 import { GestureRecognizer } from '@mediapipe/tasks-vision'
 import type { VisionRuntimeAPI } from './vision'
 import { createAtom } from '@handwave/system'
-
-export type GestureRecognizerConfig = {
-  numHands?: number
-  minHandDetectionConfidence?: number
-  minHandPresenceConfidence?: number
-  minTrackingConfidence?: number
-}
+import { GestureRecognizerConfig } from '../vocabulary/detectionSchemas'
 
 export type GestureRecognizerState = {
   status: 'idle' | 'loading' | 'ready' | 'error'

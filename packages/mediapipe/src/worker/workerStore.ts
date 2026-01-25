@@ -9,13 +9,11 @@
  */
 
 import { defineResource } from 'braided'
-import type { MultiResolutionSpatialHash } from '@handwave/intent-engine';
+import type { DeadZones, GridResolution, MultiResolutionSpatialHash } from '@handwave/intent-engine';
 import { createMultiResolutionSpatialHash } from '@handwave/intent-engine'
 import type {
-  DeadZones,
   FaceLandmarkerConfig,
   GestureRecognizerConfig,
-  GridResolution,
   ModelPaths,
 } from '../vocabulary/detectionSchemas'
 import type { DetectionBufferViews } from '../shared/detectionBuffer'
