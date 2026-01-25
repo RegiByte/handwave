@@ -38,18 +38,14 @@ export function matchesGesture(
     return false
   }
 
-  // Extract gesture result from frame
-  const gestureResult = frame.gestureResult
-  if (
-    !gestureResult ||
-    !gestureResult.hands ||
-    gestureResult.hands.length === 0
-  ) {
+  // Extract hands from canonical detection frame
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return false
   }
 
   // Find matching hand(s)
-  const matchingHands = gestureResult.hands.filter((hand) => {
+  const matchingHands = hands.filter((hand) => {
     // Normalize handedness (MediaPipe uses 'Left'/'Right', we use 'left'/'right')
     const handedness = hand.handedness?.toLowerCase() as 'left' | 'right'
 
@@ -109,17 +105,13 @@ export function getGestureForHand(
   hand: 'left' | 'right',
   handIndex: number,
 ): { gesture: string; confidence: number } | null {
-  const gestureResult = frame.gestureResult
-  if (
-    !gestureResult ||
-    !gestureResult.hands ||
-    gestureResult.hands.length === 0
-  ) {
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return null
   }
 
   // Find the specific hand instance
-  const matchingHand = gestureResult.hands.find((h) => {
+  const matchingHand = hands.find((h) => {
     const handedness = h.handedness?.toLowerCase() as 'left' | 'right'
     return handedness === hand && h.handIndex === handIndex
   })
@@ -174,16 +166,12 @@ export function getAllGestures(frame: FrameSnapshot): Array<{
   gesture: string
   confidence: number
 }> {
-  const gestureResult = frame.gestureResult
-  if (
-    !gestureResult ||
-    !gestureResult.hands ||
-    gestureResult.hands.length === 0
-  ) {
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return []
   }
 
-  return gestureResult.hands.map((h) => ({
+  return hands.map((h) => ({
     hand: h.handedness?.toLowerCase() as 'left' | 'right',
     handIndex: h.handIndex,
     gesture: h.gesture,

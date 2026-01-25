@@ -9,8 +9,7 @@
 
 import { defineResource } from 'braided'
 import type { StartedResource } from 'braided'
-import type { Detection, GestureRecognizerResult } from '@mediapipe/tasks-vision'
-import type { HandCellInfo, RecordedFrame, RecordedHand, RecordingSession } from '@handwave/intent-engine'
+import type { HandCellInfo, RecordedFrame, RecordingSession } from '@handwave/intent-engine'
 import { normalizedToCellByResolution } from '@handwave/intent-engine'
 import { createAtom } from '@handwave/system'
 import type { DetectionWorkerResource, LoopResource } from '@handwave/mediapipe'
@@ -67,57 +66,12 @@ export const recordingResource = defineResource({
       return `session-${timestamp}-${random}`
     }
 
-    /**
-     * Serialize MediaPipe gesture result to recorded hand format
-     */
-    const serializeGestureResult = (
-      gestureResult: GestureRecognizerResult | null
-    ): { hands: Array<RecordedHand> } | null => {
-      if (!gestureResult) return null
-
-      const hands: Array<RecordedHand> = []
-
-      // MediaPipe returns parallel arrays for landmarks, handedness, gestures
-      const handCount = gestureResult.landmarks?.length || 0
-
-      for (let i = 0; i < handCount; i++) {
-        const landmarks = gestureResult.landmarks[i]
-        const worldLandmarks = gestureResult.worldLandmarks?.[i]
-        const handedness = (gestureResult.handedness as unknown as Array<Detection>)?.[i]?.categories?.[0]
-        const gesture = (gestureResult.gestures as unknown as Array<Detection>)?.[i]?.categories?.[0]
-
-        if (!landmarks) continue
-
-        hands.push({
-          handedness:
-            handedness?.categoryName === 'Left' ? 'Left' : 'Right',
-          handIndex: i,
-          gesture: gesture?.categoryName || 'None',
-          gestureScore: gesture?.score || 0,
-          landmarks: landmarks.map((lm) => ({
-            x: lm.x,
-            y: lm.y,
-            z: lm.z,
-            visibility: lm.visibility || 0,
-          })),
-          worldLandmarks: worldLandmarks
-            ? worldLandmarks.map((wlm) => ({
-                x: wlm.x,
-                y: wlm.y,
-                z: wlm.z,
-              }))
-            : [],
-        })
-      }
-
-      return { hands }
-    }
 
     /**
-     * Extract hand cell information
+     * Extract hand cell information from canonical detection frame
      */
     const extractHandCells = (
-      gestureResult: GestureRecognizerResult | null,
+      detectionFrame: any,
       gridConfig: { cols: number; rows: number },
       deadZones: {
         top: number
@@ -127,10 +81,10 @@ export const recordingResource = defineResource({
       },
       mirrored: boolean
     ): Array<HandCellInfo> => {
-      if (!gestureResult) return []
+      const hands = detectionFrame?.detectors?.hand
+      if (!hands || hands.length === 0) return []
 
       const handCells: Array<HandCellInfo> = []
-      const handCount = gestureResult.landmarks?.length || 0
 
       // Default grid presets (matching grid.ts)
       const gridPresets = {
@@ -139,8 +93,8 @@ export const recordingResource = defineResource({
         fine: { cols: 24, rows: 16 },
       }
 
-      for (let i = 0; i < handCount; i++) {
-        const landmarks = gestureResult.landmarks[i]
+      for (const hand of hands) {
+        const landmarks = hand.landmarks
         if (!landmarks || landmarks.length < 9) continue
 
         // Use index finger tip (landmark 8)
@@ -178,7 +132,7 @@ export const recordingResource = defineResource({
         )
 
         handCells.push({
-          handIndex: i,
+          handIndex: hand.handIndex,
           cell,
           position,
           gridResolution:
@@ -192,15 +146,15 @@ export const recordingResource = defineResource({
     /**
      * Record a single frame
      */
-    const recordFrame = (_frameData: any) => {
+    const recordFrame = (frameData: any) => {
       const currentState = state.get()
       if (!currentState.isRecording) return
 
-      // Read detection results from SharedArrayBuffer
-      const detectionResults = detectionWorker.readDetectionResults()
-      if (!detectionResults) return
+      // frameData contains enriched detection frame
+      const detectionFrame = frameData.detectionFrame
+      if (!detectionFrame) return
 
-      const { gestureResult, timestamp, workerFPS } = detectionResults
+      const timestamp = frameData.timestamp
 
       // Get loop state for context
       const loopState = loop.state.get()
@@ -223,23 +177,23 @@ export const recordingResource = defineResource({
         height: 480,
       }
 
-      // Serialize gesture result
-      const serializedGesture = serializeGestureResult(gestureResult)
-
       // Extract hand cells
       const handCells = extractHandCells(
-        gestureResult,
+        detectionFrame,
         gridConfig,
         deadZones,
         loopState.mirrored
       )
 
-      // Create recorded frame
+      // Get worker FPS from detection worker
+      const detectionResults = detectionWorker.readDetectionResults()
+      const workerFPS = detectionResults?.workerFPS || 0
+
+      // Create recorded frame with canonical detection data
       const recordedFrame: RecordedFrame = {
         timestamp,
         frameIndex: currentState.frameIndex,
-        gestureResult: serializedGesture,
-        faceResult: null, // Not recording face data yet
+        detectionFrame, // Canonical EnrichedDetectionFrame
         spatial: {
           grid: gridConfig,
           deadZones,

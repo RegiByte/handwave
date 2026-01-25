@@ -58,9 +58,10 @@ export {
   GESTURE_NAMES,
   HANDEDNESS,
   // Reconstruction functions
-  reconstructFaceLandmarkerResult,
-  reconstructGestureRecognizerResult,
-  reconstructDetectionResults,
+  reconstructHandDetections,
+  reconstructFaceDetections,
+  reconstructDetectionFrame,
+  getWorkerFPS,
   // Utilities
   hasDetectionData,
   getDetectionCounts,

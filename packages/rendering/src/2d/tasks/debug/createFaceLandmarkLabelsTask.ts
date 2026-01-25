@@ -38,8 +38,9 @@ export const createFaceLandmarkLabelsTask = (
   const fontSize = config?.fontSize ?? 10
   const showNames = config?.showNames ?? true
 
-  return ({ ctx, faceResult, mirrored, viewport }) => {
-    if (!faceResult?.faceLandmarks?.length) return
+  return ({ ctx, detectionFrame, mirrored, viewport }) => {
+    const faces = detectionFrame?.detectors?.face
+    if (!faces || faces.length === 0) return
 
     ctx.font = `${fontSize}px monospace`
     ctx.textAlign = 'center'
@@ -47,7 +48,8 @@ export const createFaceLandmarkLabelsTask = (
     ctx.shadowColor = 'rgba(0,0,0,0.9)'
     ctx.shadowBlur = 3
 
-    faceResult.faceLandmarks.forEach((landmarks) => {
+    faces.forEach((face) => {
+      const landmarks = face.landmarks
       keyLandmarks.forEach(({ idx, name }) => {
         const landmark = landmarks[idx]
         if (!landmark) return

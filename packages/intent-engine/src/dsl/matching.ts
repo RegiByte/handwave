@@ -19,10 +19,6 @@ import type {
 import { intentKeywords } from '@handwave/intent-engine'
 import type { FrameSnapshot } from '@handwave/intent-engine'
 
-// ============================================================================
-// MAIN MATCHING FUNCTION
-// ============================================================================
-
 /**
  * Match a pattern expression against a frame.
  *
@@ -67,10 +63,6 @@ export function matchPatternDef(
   }
 }
 
-// ============================================================================
-// GESTURE PATTERN MATCHING
-// ============================================================================
-
 /**
  * Match a gesture pattern against a frame.
  */
@@ -78,13 +70,13 @@ function matchGesturePattern(
   frame: FrameSnapshot,
   def: GesturePatternDef
 ): boolean {
-  const gestureResult = frame.gestureResult
-  if (!gestureResult?.hands || gestureResult.hands.length === 0) {
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return false
   }
 
   // Find a hand that matches
-  return gestureResult.hands.some((hand) => {
+  return hands.some((hand) => {
     // Check handedness
     const handedness = hand.handedness.toLowerCase() as 'left' | 'right'
     if (!matchesHand(handedness, def.hand)) {
@@ -105,10 +97,6 @@ function matchGesturePattern(
   })
 }
 
-// ============================================================================
-// PINCH PATTERN MATCHING
-// ============================================================================
-
 /**
  * Match a pinch pattern against a frame.
  */
@@ -116,13 +104,13 @@ function matchPinchPattern(
   frame: FrameSnapshot,
   def: PinchPatternDef
 ): boolean {
-  const gestureResult = frame.gestureResult
-  if (!gestureResult?.hands || gestureResult.hands.length === 0) {
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return false
   }
 
   // Find a hand that matches
-  return gestureResult.hands.some((hand) => {
+  return hands.some((hand) => {
     // Check handedness
     const handedness = hand.handedness.toLowerCase() as 'left' | 'right'
     if (!matchesHand(handedness, def.hand)) {
@@ -477,9 +465,9 @@ export function extractAllMatchingHands(
   position: Position
 }> {
   const def = pattern._intent.def
-  const gestureResult = frame.gestureResult
+  const hands = frame.detectionFrame?.detectors?.hand
 
-  if (!gestureResult?.hands || gestureResult.hands.length === 0) {
+  if (!hands || hands.length === 0) {
     return []
   }
 
@@ -520,7 +508,7 @@ export function extractAllMatchingHands(
     if (!singleHand) return []
 
     // Add headIndex from the frame data
-    const frameHand = gestureResult.hands.find(
+    const frameHand = hands.find(
       h => h.handIndex === singleHand.handIndex
     )
 
@@ -530,7 +518,7 @@ export function extractAllMatchingHands(
     }]
   }
 
-  // console.log('[extractAllMatchingHands] treating as simple pattern, extracting all matching hands. Frame has', gestureResult.hands.length, 'hands')
+  // console.log('[extractAllMatchingHands] treating as simple pattern, extracting all matching hands. Frame has', hands.length, 'hands')
 
   // For simple patterns (gesture/pinch), extract ALL matching hands
   const matchingHands: Array<{
@@ -541,9 +529,9 @@ export function extractAllMatchingHands(
     position: Position
   }> = []
 
-  // console.log('[extractAllMatchingHands] all hands in frame:', gestureResult.hands.map(h => ({ handedness: h.handedness, handIndex: h.handIndex, gesture: h.gesture, score: h.gestureScore })))
+  // console.log('[extractAllMatchingHands] all hands in frame:', hands.map(h => ({ handedness: h.handedness, handIndex: h.handIndex, gesture: h.gesture, score: h.gestureScore })))
 
-  for (const hand of gestureResult.hands) {
+  for (const hand of hands) {
     const handedness = hand.handedness.toLowerCase() as 'left' | 'right'
     // console.log('[extractAllMatchingHands] iterating hand - raw handedness:', hand.handedness, 'normalized:', handedness, 'handIndex:', hand.handIndex)
 
@@ -615,9 +603,9 @@ export function extractMatchedHandFromPattern(
   position: Position
 } | null {
   const def = pattern._intent.def
-  const gestureResult = frame.gestureResult
+  const hands = frame.detectionFrame?.detectors?.hand
 
-  if (!gestureResult?.hands || gestureResult.hands.length === 0) {
+  if (!hands || hands.length === 0) {
     return null
   }
 
@@ -630,12 +618,12 @@ export function extractMatchedHandFromPattern(
     }
 
     // Find the "primary" hand
-    let primaryHand: typeof gestureResult.hands[0] | null = null
+    let primaryHand: typeof hands[0] | null = null
     let primaryHandedness: 'left' | 'right' | null = null
 
     // Look for right hand first (typically the action hand in two-hand patterns)
-    const rightHand = gestureResult.hands.find(h => h.handedness.toLowerCase() === 'right')
-    const leftHand = gestureResult.hands.find(h => h.handedness.toLowerCase() === 'left')
+    const rightHand = hands.find(h => h.handedness.toLowerCase() === 'right')
+    const leftHand = hands.find(h => h.handedness.toLowerCase() === 'left')
 
     // First, try to find a pattern marked with .primary()
     // Pass frame so anyOf patterns only search matching branches
@@ -683,8 +671,8 @@ export function extractMatchedHandFromPattern(
         primaryHand = rightHand
       } else if (leftHand) {
         primaryHand = leftHand
-      } else if (gestureResult.hands.length > 0) {
-        primaryHand = gestureResult.hands[0]
+      } else if (hands.length > 0) {
+        primaryHand = hands[0]
       }
     }
 
@@ -704,7 +692,7 @@ export function extractMatchedHandFromPattern(
   }
 
   // Find the first matching hand for simple patterns
-  for (const hand of gestureResult.hands) {
+  for (const hand of hands) {
     const handedness = hand.handedness.toLowerCase() as 'left' | 'right'
 
     // Check if this hand matches the pattern's hand requirement

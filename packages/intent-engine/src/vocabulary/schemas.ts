@@ -7,6 +7,7 @@
 
 import { z } from 'zod'
 import { intentKeywords } from './keywords'
+import { enrichedDetectionFrameSchema } from './detectionSchemas'
 
 // ============================================================================
 // Spatial Types
@@ -292,34 +293,14 @@ export type EndReason = z.infer<typeof endReasonSchema>
 // ============================================================================
 
 /**
- * Frame snapshot (uses enriched recording format)
+ * Frame snapshot (uses canonical detection types)
  * 
- * Note: This uses the enriched format from recordingSchemas, not raw MediaPipe.
- * Each hand includes: handIndex, gesture, gestureScore (added by recording system)
+ * Uses EnrichedDetectionFrame from canonical detection schemas.
+ * This is the single source of truth for detection data.
  */
 export const frameSnapshotSchema = z.object({
   timestamp: z.number(),
-  faceResult: z.any().nullable(), // TODO: Use enriched face schema when needed
-  gestureResult: z.object({
-    hands: z.array(z.object({
-      handedness: z.string(), // 'left' or 'right' (lowercase)
-      handIndex: z.number().int().min(0).max(3),
-      headIndex: z.number().int().min(0).max(1).default(0), // Which person (0-1 for 2 heads)
-      gesture: z.string(),
-      gestureScore: z.number(),
-      landmarks: z.array(z.object({
-        x: z.number(),
-        y: z.number(),
-        z: z.number(),
-        visibility: z.number().optional(),
-      })),
-      worldLandmarks: z.array(z.object({
-        x: z.number(),
-        y: z.number(),
-        z: z.number(),
-      })).optional(),
-    })),
-  }).nullable(),
+  detectionFrame: enrichedDetectionFrameSchema.nullable(), // EnrichedDetectionFrame (canonical detection data)
 })
 
 export type FrameSnapshot = z.infer<typeof frameSnapshotSchema>

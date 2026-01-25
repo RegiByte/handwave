@@ -7,7 +7,7 @@
  * Philosophy: Simple rules compose. Newtonian physics with inverse square law.
  */
 
-import { Detection, GestureRecognizerResult } from '@mediapipe/tasks-vision'
+import type { EnrichedDetectionFrame } from '@handwave/intent-engine'
 import type { Force, ParticleArrays } from './particleState'
 import {
   DAMPING,
@@ -591,59 +591,53 @@ export function assignParticlesToVortexes(
  * @returns Position with offset applied, or null if landmarks not found
  */
 export function getFingerVortexPosition(
-  gestureResult: GestureRecognizerResult,
+  detectionFrame: EnrichedDetectionFrame,
   hand: 'left' | 'right',
   handIndex: number,
   offsetDistance: number = 0.15
 ): { x: number; y: number } | null {
-  if (!gestureResult?.landmarks || !gestureResult?.handedness) return null
+  const hands = detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) return null
 
-  // Find the matching hand
-  for (let i = 0; i < gestureResult.landmarks.length; i++) {
-    const handednessInfo = gestureResult.handedness[i] as unknown as Detection
-    if (!handednessInfo?.categories?.[0]) continue
+  // Find the matching hand by handedness and handIndex
+  const targetHand = hands.find(h => h.handedness === hand && h.handIndex === handIndex)
+  if (!targetHand) return null
 
-    const handednessLabel = handednessInfo.categories[0].categoryName?.toLowerCase()
+  const landmarks = targetHand.landmarks
 
-    if (handednessLabel === hand && i === handIndex) {
-      const landmarks = gestureResult.landmarks[i]
+  // Landmark indices:
+  // 0 = wrist (palm base)
+  // 8 = index finger tip
+  // 12 = middle finger tip
+  if (!landmarks?.[0] || !landmarks?.[8] || !landmarks?.[12]) return null
 
-      // Landmark indices:
-      // 0 = wrist (palm base)
-      // 8 = index finger tip
-      // 12 = middle finger tip
-      if (!landmarks?.[0] || !landmarks?.[8] || !landmarks?.[12]) return null
+  const palm = landmarks[0]
+  const indexTip = landmarks[8]
+  const middleTip = landmarks[12]
 
-      const palm = landmarks[0]
-      const indexTip = landmarks[8]
-      const middleTip = landmarks[12]
+  // Calculate midpoint between index and middle fingertips
+  const midX = (indexTip.x + middleTip.x) / 2
+  const midY = (indexTip.y + middleTip.y) / 2
 
-      // Calculate midpoint between index and middle fingertips
-      const midX = (indexTip.x + middleTip.x) / 2
-      const midY = (indexTip.y + middleTip.y) / 2
+  // Calculate direction vector from palm to midpoint
+  const dirX = midX - palm.x
+  const dirY = midY - palm.y
 
-      // Calculate direction vector from palm to midpoint
-      const dirX = midX - palm.x
-      const dirY = midY - palm.y
+  // Normalize the direction vector (thanks Pythagoras!)
+  const magnitude = Math.sqrt(dirX * dirX + dirY * dirY)
 
-      // Normalize the direction vector (thanks Pythagoras!)
-      const magnitude = Math.sqrt(dirX * dirX + dirY * dirY)
-
-      if (magnitude === 0) {
-        // Fallback to midpoint if palm and fingers are at same position
-        return { x: midX, y: midY }
-      }
-
-      const normalizedDirX = dirX / magnitude
-      const normalizedDirY = dirY / magnitude
-
-      // Apply offset along the normalized direction
-      return {
-        x: midX + normalizedDirX * offsetDistance,
-        y: midY + normalizedDirY * offsetDistance,
-      }
-    }
+  if (magnitude === 0) {
+    // Fallback to midpoint if palm and fingers are at same position
+    return { x: midX, y: midY }
   }
 
-  return null
+  const normalizedDirX = dirX / magnitude
+  const normalizedDirY = dirY / magnitude
+
+  // Apply offset along the normalized direction
+  return {
+    x: midX + normalizedDirX * offsetDistance,
+    y: midY + normalizedDirY * offsetDistance,
+  }
 }
+

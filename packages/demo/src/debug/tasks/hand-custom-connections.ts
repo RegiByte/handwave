@@ -1,6 +1,6 @@
 import { transformLandmarksToViewport } from '@handwave/mediapipe'
 import type { RenderTask } from '@handwave/mediapipe'
-import { createColorScale, hexToRgba, mixColors, remap  } from '@handwave/rendering'
+import { createColorScale, hexToRgba, mixColors, remap } from '@handwave/rendering'
 
 /**
  * Custom hand connection patterns
@@ -116,13 +116,14 @@ function filterConnectionsByDistance(
 export const handSkeletonTask: RenderTask = ({
   drawer,
   ctx,
-  gestureResult,
+  detectionFrame,
   mirrored,
   viewport,
   width,
   height,
 }) => {
-  if (!gestureResult?.landmarks?.length) return
+  const hands = detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) return
 
   // Define depth range for color mapping
   const DEPTH_MIN = -0.15
@@ -131,7 +132,8 @@ export const handSkeletonTask: RenderTask = ({
   // Create a perceptually smooth color scale from far (blue) to near (red)
   const depthColorScale = createColorScale('#4169e1', '#ff4757', 100)
 
-  for (const landmarks of gestureResult.landmarks) {
+  for (const hand of hands) {
+    const landmarks = hand.landmarks
     const transformed = transformLandmarksToViewport(
       landmarks,
       viewport,
@@ -265,15 +267,17 @@ export const handSkeletonTask: RenderTask = ({
 export const fingertipsConnectorsTask: RenderTask = ({
   drawer,
   ctx,
-  gestureResult,
+  detectionFrame,
   mirrored,
   viewport,
   width,
   height,
 }) => {
-  if (!gestureResult?.landmarks?.length) return
+  const hands = detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) return
 
-  for (const landmarks of gestureResult.landmarks) {
+  for (const hand of hands) {
+    const landmarks = hand.landmarks
     const transformed = transformLandmarksToViewport(
       landmarks,
       viewport,
@@ -357,18 +361,20 @@ export const fingertipsConnectorsTask: RenderTask = ({
 export const palmHighlightTask: RenderTask = ({
   drawer,
   ctx,
-  gestureResult,
+  detectionFrame,
   mirrored,
   viewport,
   width,
   height,
 }) => {
-  if (!gestureResult?.landmarks?.length) return
+  const hands = detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) return
 
   // Create warm color palette for palm
   const palmColorScale = createColorScale('#ff6b35', '#ffd93d', 50)
 
-  for (const landmarks of gestureResult.landmarks) {
+  for (const hand of hands) {
+    const landmarks = hand.landmarks
     const transformed = transformLandmarksToViewport(
       landmarks,
       viewport,

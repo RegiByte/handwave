@@ -53,14 +53,14 @@ export function matchesContact(
     return false
   }
 
-  // Extract gesture result from frame
-  const gestureResult = frame.gestureResult
-  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+  // Extract hands from canonical detection frame
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return false
   }
 
   // Find matching hand(s)
-  const matchingHands = gestureResult.hands.filter((hand: any) => {
+  const matchingHands = hands.filter((hand) => {
     // Normalize handedness (MediaPipe uses 'Left'/'Right', we use 'left'/'right')
     const handedness = hand.handedness?.toLowerCase() as 'left' | 'right'
     
@@ -213,13 +213,13 @@ export function getLandmarksForHand(
   hand: 'left' | 'right',
   handIndex: number
 ): Array<Vector3> | null {
-  const gestureResult = frame.gestureResult
-  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return null
   }
 
   // Find the specific hand instance
-  const matchingHand = gestureResult.hands.find((h: any) => {
+  const matchingHand = hands.find((h) => {
     const handedness = h.handedness?.toLowerCase() as 'left' | 'right'
     return handedness === hand && h.handIndex === handIndex
   })

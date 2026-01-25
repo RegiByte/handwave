@@ -1,5 +1,4 @@
-import type { GestureRecognizerResult } from '@mediapipe/tasks-vision'
-import type { GridConfig, GridResolution } from '@handwave/intent-engine'
+import type { GridConfig, GridResolution, EnrichedDetectionFrame } from '@handwave/intent-engine'
 import { DEFAULT_GRID_PRESETS, intentKeywords } from '@handwave/intent-engine'
 import type { SpatialUpdateMessage, RenderTask } from '@handwave/mediapipe'
 
@@ -60,7 +59,7 @@ export type MultiGridOverlayConfig = {
 export const createMultiGridOverlayTask = (
   config: MultiGridOverlayConfig,
 ): RenderTask => {
-  return ({ ctx, gestureResult, viewport, mirrored }) => {
+  return ({ ctx, detectionFrame, viewport, mirrored }) => {
     if (!viewport) return
 
     const { x, y, width, height } = viewport
@@ -130,7 +129,8 @@ export const createMultiGridOverlayTask = (
     })
 
     // Draw hand positions if enabled
-    if (config.showHandPositions && gestureResult?.landmarks) {
+    const hands = detectionFrame?.detectors?.hand
+    if (config.showHandPositions && hands && hands.length > 0) {
       // Check if we have spatial data from worker
       const spatialData = config.spatialData?.()
 
@@ -139,7 +139,7 @@ export const createMultiGridOverlayTask = (
         drawHandPositionsFromSpatialData(
           ctx,
           spatialData,
-          gestureResult,
+          detectionFrame,
           safeZone,
           gridsToDraw,
           mirrored,
@@ -149,7 +149,7 @@ export const createMultiGridOverlayTask = (
         // Fall back to direct calculation
         drawHandPositionsFromGesture(
           ctx,
-          gestureResult,
+          detectionFrame,
           x,
           y,
           width,
@@ -310,7 +310,7 @@ function getLabelOffset(
 function drawHandPositionsFromSpatialData(
   ctx: CanvasRenderingContext2D,
   spatialData: SpatialUpdateMessage,
-  gestureResult: GestureRecognizerResult,
+  detectionFrame: EnrichedDetectionFrame,
   safeZone: { x: number; y: number; width: number; height: number },
   gridsToHighlight: Array<{ resolution: GridResolution; preset: GridConfig }>,
   mirrored: boolean,
@@ -318,10 +318,10 @@ function drawHandPositionsFromSpatialData(
 ) {
   spatialData.hands.forEach(({ handIndex, landmarkIndex, cells }) => {
     // Get the tracked landmark from gesture result
-    const landmarks = gestureResult.landmarks[handIndex]
-    if (!landmarks) return
+    const hand = detectionFrame?.detectors?.hand?.find((h) => h.handIndex === handIndex)
+    if (!hand) return
 
-    const landmark = landmarks[landmarkIndex]
+    const landmark = hand.landmarks[landmarkIndex]
     if (!landmark) return
 
     // Worker has already applied mirroring to cells, so we need to apply it to hand position too
@@ -443,7 +443,7 @@ function drawHandPositionsFromSpatialData(
  */
 function drawHandPositionsFromGesture(
   ctx: CanvasRenderingContext2D,
-  gestureResult: GestureRecognizerResult,
+  detectionFrame: EnrichedDetectionFrame,
   x: number,
   y: number,
   width: number,
@@ -452,7 +452,12 @@ function drawHandPositionsFromGesture(
   mirrored: boolean,
   gridsToHighlight: Array<{ resolution: GridResolution; preset: GridConfig }>,
 ) {
-  gestureResult.landmarks.forEach((landmarks, handIndex) => {
+  const hands = detectionFrame?.detectors?.hand
+  if (!hands) return
+
+  hands.forEach((hand) => {
+    const landmarks = hand.landmarks
+    const handIndex = hand.handIndex
     // Use index finger tip (landmark 8) as representative position
     const indexTip = landmarks[8]
     if (!indexTip) return

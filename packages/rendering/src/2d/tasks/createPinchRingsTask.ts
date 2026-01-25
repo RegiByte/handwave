@@ -31,10 +31,13 @@ export const createPinchRingsTask = (
   const glowRadius = config?.glowRadius ?? 22
   const lineWidth = config?.lineWidth ?? 4
 
-  return ({ ctx, gestureResult, viewport, mirrored }) => {
-    if (!gestureResult?.landmarks?.length) return
+  return ({ ctx, detectionFrame, viewport, mirrored }) => {
+    const hands = detectionFrame?.detectors?.hand
+    if (!hands || hands.length === 0) return
 
-    gestureResult.landmarks.forEach((landmarks) => {
+    hands.forEach((hand) => {
+      const landmarks = hand.landmarks
+
       // Get thumb tip (landmark 4)
       const thumbTip = landmarks[4]
       if (!thumbTip) return

@@ -1,7 +1,4 @@
-import type {
-  FaceLandmarkerResult,
-  GestureRecognizerResult,
-} from '@mediapipe/tasks-vision'
+import type { EnrichedDetectionFrame } from '@handwave/intent-engine'
 import type { CanvasAPI } from '../detection/canvas'
 import type { FrameRaterAPI } from '../detection/frameRater'
 
@@ -11,8 +8,7 @@ export type RenderContext = {
   width: number
   height: number
   video: HTMLVideoElement
-  faceResult: FaceLandmarkerResult | null
-  gestureResult: GestureRecognizerResult | null
+  detectionFrame: EnrichedDetectionFrame | null
   timestamp: number
   deltaMs: number
   mirrored: boolean

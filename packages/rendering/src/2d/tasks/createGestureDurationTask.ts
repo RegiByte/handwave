@@ -1,5 +1,4 @@
-import type { Detection, GestureRecognizerResult, NormalizedLandmark } from '@mediapipe/tasks-vision'
-import type { FrameSnapshot, Vector3 } from '@handwave/intent-engine'
+import type { FrameSnapshot, Landmark, Vector3 } from '@handwave/intent-engine'
 import type { RenderTask } from '@handwave/mediapipe'
 import { mapLandmarkToViewport } from '@handwave/mediapipe'
 
@@ -26,7 +25,7 @@ export type GestureDurationConfig = {
  * Calculate center of mass from hand landmarks
  */
 function calculateCenterOfMass(
-  landmarks: Array<NormalizedLandmark>
+  landmarks: Array<Landmark>
 ): Vector3 {
   const sum = landmarks.reduce(
     (acc, lm) => ({
@@ -45,38 +44,6 @@ function calculateCenterOfMass(
 }
 
 /**
- * Get gesture name for a specific hand
- */
-function getGestureForHand(
-  handIndex: number,
-  gestureResult: GestureRecognizerResult
-): { name: string; score: number } | null {
-  if (!gestureResult?.gestures?.[handIndex]) return null
-
-  const gesture = gestureResult.gestures[handIndex] as unknown as Detection
-  const category = gesture?.categories?.[0]
-
-  if (!category) return null
-
-  return {
-    name: category.categoryName || 'None',
-    score: category.score || 0,
-  }
-}
-
-/**
- * Get handedness for a specific hand
- */
-function getHandedness(gestureResult: GestureRecognizerResult, handIndex: number): string {
-  if (!gestureResult?.handedness?.[handIndex]) return 'Unknown'
-
-  const handedness = gestureResult.handedness[handIndex] as unknown as Detection
-  const category = handedness?.categories?.[0]
-
-  return category?.categoryName || 'Unknown'
-}
-
-/**
  * Check if a frame has a specific gesture for a specific hand
  */
 function hasGesture(
@@ -84,10 +51,10 @@ function hasGesture(
   targetHandIndex: number,
   gestureName: string
 ): boolean {
-  if (!frame.gestureResult?.hands) return false
-  
+  if (!frame.detectionFrame?.detectors.hand) return false
+
   // Find the hand by its handIndex property (not array index)
-  const hand = frame.gestureResult.hands.find(h => h.handIndex === targetHandIndex)
+  const hand = frame.detectionFrame.detectors.hand.find(h => h.handIndex === targetHandIndex)
   if (!hand) return false
 
   return hand.gesture === gestureName
@@ -109,20 +76,21 @@ export const createGestureDurationTask = (
   const showBackground = config?.showBackground ?? true
   const colorByHandedness = config?.colorByHandedness ?? true
 
-  return ({ ctx, gestureResult, viewport, mirrored }) => {
-    if (!gestureResult?.landmarks?.length) return
+  return ({ ctx, detectionFrame, viewport, mirrored }) => {
+    // Use canonical detection frame format
+    const hands = detectionFrame?.detectors?.hand
+    if (!hands || hands.length === 0) return
 
-    gestureResult.landmarks.forEach((landmarks, handIndex) => {
+    hands.forEach((hand) => {
       // Calculate center of mass (average of all 21 landmarks)
-      const center = calculateCenterOfMass(landmarks)
+      const center = calculateCenterOfMass(hand.landmarks)
 
-      // Get gesture info for this hand
-      const gesture = getGestureForHand(handIndex, gestureResult)
-      if (!gesture || gesture.name === 'None') return
+      // Skip if no gesture or gesture is None
+      if (!hand.gesture || hand.gesture === 'None') return
 
       // Get continuous duration from frame history
       const duration = frameHistory.getContinuousDuration((frame) => {
-        return hasGesture(frame, handIndex, gesture.name)
+        return hasGesture(frame, hand.handIndex, hand.gesture)
       })
 
       // Transform center to viewport coordinates
@@ -135,13 +103,12 @@ export const createGestureDurationTask = (
       // Color by handedness if enabled
       let color = '#ffffff'
       if (colorByHandedness) {
-        const handedness = getHandedness(gestureResult, handIndex)
-        color = handedness === 'Right' ? '#00ffff' : '#ff00ff'
+        color = hand.handedness === 'right' ? '#00ffff' : '#ff00ff'
       }
 
       // Draw label with duration
       const durationSec = (duration / 1000).toFixed(1)
-      const label = `${gesture.name} (${durationSec}s)`
+      const label = `${hand.gesture} (${durationSec}s)`
 
       // Set up text styling
       ctx.font = `bold ${fontSize}px monospace`

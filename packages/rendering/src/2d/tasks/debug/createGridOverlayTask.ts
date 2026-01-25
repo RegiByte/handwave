@@ -36,7 +36,7 @@ export const createGridOverlayTask = (config?: GridOverlayConfig): RenderTask =>
   const showDeadZones = config?.showDeadZones ?? true
   const showInfo = config?.showInfo ?? true
 
-  return ({ ctx, gestureResult, viewport, mirrored }) => {
+  return ({ ctx, detectionFrame, viewport, mirrored }) => {
     if (!viewport) return
 
     const { x, y, width, height } = viewport
@@ -128,8 +128,11 @@ export const createGridOverlayTask = (config?: GridOverlayConfig): RenderTask =>
     }
 
     // Draw hand positions if enabled
-    if (showHandPositions && gestureResult?.landmarks?.length) {
-      gestureResult.landmarks.forEach((landmarks, handIndex) => {
+    const hands = detectionFrame?.detectors?.hand
+    if (showHandPositions && hands && hands.length > 0) {
+      hands.forEach((hand) => {
+        const landmarks = hand.landmarks
+        const handIndex = hand.handIndex
         const indexTip = landmarks[8]
         if (!indexTip) return
 

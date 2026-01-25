@@ -1,96 +1,16 @@
 /**
  * Detection Worker Schemas
  *
- * Zod schemas for detection worker task inputs and outputs.
- * These schemas define the shape of data passed between main thread and worker.
+ * MediaPipe-specific schemas for worker communication and configuration.
+ * Detection data types are imported from @handwave/intent-engine.
  */
 
 import { deadZonesSchema } from '@handwave/intent-engine'
+import type { Landmark, Category } from '@handwave/intent-engine'
 import { z } from 'zod'
 
-// ============================================================================
-// Shared Schemas (MediaPipe Result Types)
-// ============================================================================
-
-/**
- * 3D landmark with optional visibility
- */
-export const landmarkSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  z: z.number(),
-  visibility: z.number().optional(),
-})
-
-export type Landmark = z.infer<typeof landmarkSchema>
-
-/**
- * Category with score (used for blendshapes, gestures, etc.)
- */
-export const categorySchema = z.object({
-  categoryName: z.string(),
-  score: z.number(),
-  index: z.number().optional(),
-  displayName: z.string().optional(),
-})
-
-export type Category = z.infer<typeof categorySchema>
-
-// ============================================================================
-// Face Detection Schemas
-// ============================================================================
-
-/**
- * Face detection result
- */
-export const faceResultSchema = z.object({
-  landmarks: z.array(landmarkSchema),
-  blendshapes: z.array(categorySchema).optional(),
-  facialTransformationMatrixes: z.array(z.number()).optional(),
-})
-
-export type FaceResult = z.infer<typeof faceResultSchema>
-
-// ============================================================================
-// Hand/Gesture Detection Schemas
-// ============================================================================
-
-/**
- * Single hand result
- */
-export const handResultSchema = z.object({
-  handedness: z.string(), // 'Left' or 'Right'
-  landmarks: z.array(landmarkSchema),
-  worldLandmarks: z.array(landmarkSchema).optional(),
-})
-
-export type HandResult = z.infer<typeof handResultSchema>
-
-/**
- * Gesture recognition result
- */
-export const gestureResultSchema = z.object({
-  hands: z.array(handResultSchema),
-  gestures: z.array(categorySchema),
-})
-
-export type GestureResult = z.infer<typeof gestureResultSchema>
-
-// ============================================================================
-// Combined Detection Result
-// ============================================================================
-
-/**
- * Combined detection result from worker
- */
-export const detectionResultSchema = z.object({
-  faceResult: faceResultSchema.nullable(),
-  gestureResult: gestureResultSchema.nullable(),
-  processingTimeMs: z.number(),
-  timestamp: z.number(),
-})
-
-export type DetectionResult = z.infer<typeof detectionResultSchema>
+// Re-export canonical types for convenience
+export type { Landmark, Category }
 
 // ============================================================================
 // Configuration Schemas

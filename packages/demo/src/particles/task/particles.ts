@@ -355,9 +355,9 @@ export const createParticlesTask = (
     // Lifecycle: Execute - Render particles every frame
     // ========================================================================
 
-    execute: ({ ctx, width, height, deltaMs, mirrored, timestamp, paused, faceResult, gestureResult, viewport }) => {
+    execute: ({ ctx, width, height, deltaMs, mirrored, timestamp, paused, detectionFrame, viewport }) => {
       // Update the latest gesture result for event handlers
-      latestGestureResult = gestureResult
+      latestGestureResult = detectionFrame
       // Initialize particles on first render
       if (!initialized && width > 0 && height > 0) {
         initialized = true
@@ -451,10 +451,12 @@ export const createParticlesTask = (
 
       // Collect face oval outline segments for particle spawning
       const faceOvalSegments: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> = []
-      if (faceResult?.faceLandmarks?.length) {
+      const faces = detectionFrame?.detectors?.face
+      if (faces && faces.length > 0) {
         const ovalIndices = getFaceOvalIndices()
 
-        for (const landmarks of faceResult.faceLandmarks) {
+        for (const face of faces) {
+          const landmarks = face.landmarks
           // Build ordered list of face oval landmarks
           const ovalPoints = ovalIndices.map(idx => {
             const landmark = landmarks[idx]

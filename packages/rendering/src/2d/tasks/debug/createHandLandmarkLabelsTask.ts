@@ -48,8 +48,9 @@ export const createHandLandmarkLabelsTask = (
   const showNames = config?.showNames ?? true
   const colorScheme = config?.colorScheme ?? 'default'
 
-  return ({ ctx, gestureResult, mirrored, viewport }) => {
-    if (!gestureResult?.landmarks?.length) return
+  return ({ ctx, detectionFrame, mirrored, viewport }) => {
+    const hands = detectionFrame?.detectors?.hand
+    if (!hands || hands.length === 0) return
 
     ctx.font = `${fontSize}px monospace`
     ctx.textAlign = 'center'
@@ -57,8 +58,8 @@ export const createHandLandmarkLabelsTask = (
     ctx.shadowColor = 'rgba(0,0,0,0.9)'
     ctx.shadowBlur = 3
 
-    gestureResult.landmarks.forEach((landmarks) => {
-      landmarks.forEach((landmark, i) => {
+    hands.forEach((hand) => {
+      hand.landmarks.forEach((landmark, i) => {
         const pos = mapLandmarkToViewport(landmark, viewport, mirrored)
 
         // Color code by finger

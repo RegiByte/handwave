@@ -33,10 +33,12 @@ export const createFaceMeshIndicesTask = (
   const showConnections = config?.showConnections ?? true
   const highlightRegions = config?.highlightRegions ?? ['eyes', 'lips', 'contours']
 
-  return ({ drawer, ctx, faceResult, mirrored, viewport, width, height }) => {
-    if (!faceResult?.faceLandmarks?.length) return
+  return ({ drawer, ctx, detectionFrame, mirrored, viewport, width, height }) => {
+    const faces = detectionFrame?.detectors?.face
+    if (!faces || faces.length === 0) return
 
-    for (const landmarks of faceResult.faceLandmarks) {
+    for (const face of faces) {
+      const landmarks = face.landmarks
       const transformed = transformLandmarksToViewport(
         landmarks,
         viewport,

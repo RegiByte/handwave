@@ -29,7 +29,8 @@ import {
   getSharedArrayBufferStatus,
 } from '../shared/detectionBuffer'
 import type { DetectionBufferViews } from '../shared/detectionBuffer'
-import { reconstructDetectionResults } from '../shared/detectionReconstruct'
+import { reconstructDetectionFrame, getWorkerFPS } from '../shared/detectionReconstruct'
+import type { RawDetectionFrame } from '@handwave/intent-engine'
 
 // Model URLs (CDN-hosted MediaPipe models)
 const MODEL_PATHS = {
@@ -213,18 +214,28 @@ export const detectionWorkerResource = defineResource({
      * This is zero-copy - no message passing overhead!
      */
     const readDetectionResults = (): {
-      faceResult: ReturnType<typeof reconstructDetectionResults>['faceResult']
-      gestureResult: ReturnType<
-        typeof reconstructDetectionResults
-      >['gestureResult']
-      timestamp: number
+      detectionFrame: RawDetectionFrame
       workerFPS: number
+      // Legacy fields for backward compatibility
+      faceResult: any
+      gestureResult: any
+      timestamp: number
     } | null => {
       if (!sharedBufferEnabled || !sharedBufferViews) {
         return null
       }
 
-      return reconstructDetectionResults(sharedBufferViews)
+      const detectionFrame = reconstructDetectionFrame(sharedBufferViews)
+      const workerFPS = getWorkerFPS(sharedBufferViews)
+
+      return {
+        detectionFrame,
+        workerFPS,
+        timestamp: detectionFrame.timestamp,
+        // Legacy compatibility
+        faceResult: null,
+        gestureResult: null,
+      }
     }
 
     /**

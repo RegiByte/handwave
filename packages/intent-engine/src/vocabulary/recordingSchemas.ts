@@ -14,47 +14,12 @@ import {
   positionSchema,
   viewportSchema,
 } from './schemas'
+import { enrichedDetectionFrameSchema } from './detectionSchemas'
 
 // ============================================================================
-// Recorded Hand Data
+// Note: Recorded frames now use canonical EnrichedDetectionFrame
+// No need for separate RecordedHand/RecordedLandmark schemas
 // ============================================================================
-
-/**
- * Landmark with visibility
- */
-export const recordedLandmarkSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  z: z.number(),
-  visibility: z.number(),
-})
-
-export type RecordedLandmark = z.infer<typeof recordedLandmarkSchema>
-
-/**
- * World landmark (no visibility)
- */
-export const recordedWorldLandmarkSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  z: z.number(),
-})
-
-export type RecordedWorldLandmark = z.infer<typeof recordedWorldLandmarkSchema>
-
-/**
- * Single hand in a recorded frame
- */
-export const recordedHandSchema = z.object({
-  handedness: z.enum(['Left', 'Right']),
-  handIndex: z.number().int().min(0).max(3),
-  gesture: z.string(),
-  gestureScore: z.number(),
-  landmarks: z.array(recordedLandmarkSchema),
-  worldLandmarks: z.array(recordedWorldLandmarkSchema),
-})
-
-export type RecordedHand = z.infer<typeof recordedHandSchema>
 
 // ============================================================================
 // Spatial Context
@@ -105,16 +70,14 @@ export type PerformanceMetrics = z.infer<typeof performanceMetricsSchema>
 
 /**
  * Single recorded frame (complete snapshot of detection state)
+ * 
+ * Uses canonical EnrichedDetectionFrame for detection data.
+ * This is the single source of truth for recorded detection data.
  */
 export const recordedFrameSchema = z.object({
   timestamp: z.number(),
   frameIndex: z.number().int().nonnegative(),
-  gestureResult: z
-    .object({
-      hands: z.array(recordedHandSchema),
-    })
-    .nullable(),
-  faceResult: z.null(), // Future: add face data if needed
+  detectionFrame: enrichedDetectionFrameSchema.nullable(), // Canonical detection data
   spatial: spatialContextSchema,
   performance: performanceMetricsSchema,
 })

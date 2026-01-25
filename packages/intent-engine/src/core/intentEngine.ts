@@ -43,13 +43,13 @@ function extractMatchedHand(
   frame: FrameSnapshot,
   pattern: Pattern
 ): { hand: 'left' | 'right'; handIndex: number; headIndex: number; landmarks: Array<Vector3> } | null {
-  const gestureResult = frame.gestureResult
-  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return null
   }
 
   // Find matching hand
-  const matchingHand = gestureResult.hands.find((h) => {
+  const matchingHand = hands.find((h) => {
     const handedness = h.handedness.toLowerCase() as 'left' | 'right'
 
     // Check handedness matches
@@ -66,8 +66,12 @@ function extractMatchedHand(
     // Create a temporary frame with just this hand for matching
     const singleHandFrame: FrameSnapshot = {
       ...frame,
-      gestureResult: {
-        hands: [h]
+      detectionFrame: {
+        ...frame.detectionFrame!,
+        detectors: {
+          ...frame.detectionFrame!.detectors,
+          hand: [h]
+        }
       }
     }
 

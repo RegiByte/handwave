@@ -1,7 +1,7 @@
 /**
  * Detection Result Writing
  *
- * Worker-side functions for writing MediaPipe detection results to SharedArrayBuffer.
+ * Worker-side functions for writing canonical detection results to SharedArrayBuffer.
  * Writes to the inactive buffer, then swaps to make data visible.
  *
  * Philosophy: Write is a transformation from objects to numbers.
@@ -9,10 +9,12 @@
  */
 
 import type {
-  FaceLandmarkerResult,
-  GestureRecognizerResult,
-  NormalizedLandmark,
-} from '@mediapipe/tasks-vision'
+  RawDetectionFrame,
+  RawHandDetection,
+  RawFaceDetection,
+  Landmark,
+  Category,
+} from '@handwave/intent-engine'
 
 import {
   BLENDSHAPES_COUNT,
@@ -38,7 +40,6 @@ import {
 import type { DetectionBufferViews } from './detectionBuffer'
 
 import { GESTURE_NAMES, HANDEDNESS } from './detectionReconstruct'
-import type { Matrix } from '../types'
 
 // ============================================================================
 // Landmark Writing
@@ -50,7 +51,7 @@ import type { Matrix } from '../types'
 function writeLandmark(
   view: Float32Array,
   index: number,
-  landmark: NormalizedLandmark,
+  landmark: Landmark,
   hasVisibility: boolean,
 ): void {
   const components = hasVisibility
@@ -72,7 +73,7 @@ function writeLandmark(
  */
 function writeLandmarks(
   view: Float32Array,
-  landmarks: Array<NormalizedLandmark>,
+  landmarks: Array<Landmark>,
   expectedCount: number,
   hasVisibility: boolean,
 ): void {
@@ -98,7 +99,7 @@ function writeLandmarks(
  */
 function writeBlendshapes(
   view: Float32Array,
-  categories: Array<{ score: number }> | undefined,
+  categories: Array<Category> | undefined,
 ): void {
   if (!categories) {
     view.fill(0)
@@ -121,7 +122,7 @@ function writeBlendshapes(
  */
 function writeTransformationMatrix(
   view: Float32Array,
-  matrix: Matrix | undefined,
+  matrix: { rows: 4; columns: 4; data: number[] } | undefined,
 ): void {
   if (!matrix?.data) {
     view.fill(0)
@@ -143,20 +144,20 @@ function writeTransformationMatrix(
 // ============================================================================
 
 /**
- * Write FaceLandmarkerResult to the inactive buffer.
+ * Write canonical face detections to the inactive buffer.
  */
 export function writeFaceResult(
   views: DetectionBufferViews,
-  result: FaceLandmarkerResult | null,
+  faces: RawFaceDetection[] | undefined,
 ): void {
   const bufferIdx = getInactiveBufferIndex(views)
 
-  if (!result || result.faceLandmarks.length === 0) {
+  if (!faces || faces.length === 0) {
     setBufferFaceCount(views, bufferIdx, 0)
     return
   }
 
-  const faceCount = Math.min(result.faceLandmarks.length, MAX_FACES)
+  const faceCount = Math.min(faces.length, MAX_FACES)
   setBufferFaceCount(views, bufferIdx, faceCount)
 
   const faceLandmarkViews = getFaceLandmarkViews(views, bufferIdx)
@@ -164,25 +165,21 @@ export function writeFaceResult(
   const transformViews = getTransformationMatrixViews(views, bufferIdx)
 
   for (let i = 0; i < faceCount; i++) {
+    const face = faces[i]
+
     // Write landmarks
     writeLandmarks(
       faceLandmarkViews[i],
-      result.faceLandmarks[i],
+      face.landmarks,
       FACE_LANDMARKS_COUNT,
       true,
     )
 
     // Write blendshapes
-    writeBlendshapes(
-      blendshapeViews[i],
-      result.faceBlendshapes?.[i]?.categories,
-    )
+    writeBlendshapes(blendshapeViews[i], face.blendshapes)
 
     // Write transformation matrix
-    writeTransformationMatrix(
-      transformViews[i],
-      result.facialTransformationMatrixes?.[i],
-    )
+    writeTransformationMatrix(transformViews[i], face.transformationMatrix)
   }
 
   // Zero out unused face slots
@@ -198,38 +195,38 @@ export function writeFaceResult(
 // ============================================================================
 
 /**
- * Get handedness value from category name.
+ * Get handedness value from canonical handedness string.
  */
-function getHandednessValue(categoryName: string): number {
-  const name = categoryName.toLowerCase()
+function getHandednessValue(handedness: string): number {
+  const name = handedness.toLowerCase()
   if (name === 'left') return HANDEDNESS.LEFT
   if (name === 'right') return HANDEDNESS.RIGHT
   return HANDEDNESS.UNKNOWN
 }
 
 /**
- * Get gesture index from category name.
+ * Get gesture index from gesture name.
  */
-function getGestureIndex(categoryName: string): number {
-  const index = GESTURE_NAMES.indexOf(categoryName)
+function getGestureIndex(gestureName: string): number {
+  const index = GESTURE_NAMES.indexOf(gestureName)
   return index >= 0 ? index : 0 // Default to 'None' if not found
 }
 
 /**
- * Write GestureRecognizerResult to the inactive buffer.
+ * Write canonical hand detections to the inactive buffer.
  */
 export function writeGestureResult(
   views: DetectionBufferViews,
-  result: GestureRecognizerResult | null,
+  hands: RawHandDetection[] | undefined,
 ): void {
   const bufferIdx = getInactiveBufferIndex(views)
 
-  if (!result || result.landmarks.length === 0) {
+  if (!hands || hands.length === 0) {
     setBufferHandCount(views, bufferIdx, 0)
     return
   }
 
-  const handCount = Math.min(result.landmarks.length, MAX_HANDS)
+  const handCount = Math.min(hands.length, MAX_HANDS)
   setBufferHandCount(views, bufferIdx, handCount)
 
   const handLandmarkViews = getHandLandmarkViews(views, bufferIdx)
@@ -237,35 +234,30 @@ export function writeGestureResult(
   const handMetadataViews = getHandMetadataViews(views, bufferIdx)
 
   for (let i = 0; i < handCount; i++) {
+    const hand = hands[i]
+
     // Write landmarks
     writeLandmarks(
       handLandmarkViews[i],
-      result.landmarks[i],
+      hand.landmarks,
       HAND_LANDMARKS_COUNT,
       true,
     )
 
     // Write world landmarks
-    if (result.worldLandmarks?.[i]) {
-      writeLandmarks(
-        worldLandmarkViews[i],
-        result.worldLandmarks[i],
-        HAND_LANDMARKS_COUNT,
-        false,
-      )
-    } else {
-      worldLandmarkViews[i].fill(0)
-    }
+    writeLandmarks(
+      worldLandmarkViews[i],
+      hand.worldLandmarks,
+      HAND_LANDMARKS_COUNT,
+      false,
+    )
 
     // Write hand metadata
     // Layout: handedness(1) + padding(3) + handednessScore(4) + gestureIndex(1) + padding(3) + gestureScore(4)
     const metadata = handMetadataViews[i]
 
     // Handedness
-    const handednessCategory = result.handedness?.[i]?.[0]
-    metadata[0] = handednessCategory
-      ? getHandednessValue(handednessCategory.categoryName)
-      : HANDEDNESS.UNKNOWN
+    metadata[0] = getHandednessValue(hand.handedness)
 
     // Padding bytes 1-3
     metadata[1] = 0
@@ -278,13 +270,10 @@ export function writeGestureResult(
       metadata.byteOffset + 4,
       1,
     )
-    handednessScoreView[0] = handednessCategory?.score ?? 0
+    handednessScoreView[0] = hand.handednessScore
 
     // Gesture index
-    const gestureCategory = result.gestures?.[i]?.[0]
-    metadata[8] = gestureCategory
-      ? getGestureIndex(gestureCategory.categoryName)
-      : 0
+    metadata[8] = getGestureIndex(hand.gesture)
 
     // Padding bytes 9-11
     metadata[9] = 0
@@ -297,7 +286,7 @@ export function writeGestureResult(
       metadata.byteOffset + 12,
       1,
     )
-    gestureScoreView[0] = gestureCategory?.score ?? 0
+    gestureScoreView[0] = hand.gestureScore
   }
 
   // Zero out unused hand slots
@@ -313,22 +302,20 @@ export function writeGestureResult(
 // ============================================================================
 
 /**
- * Write both face and gesture results to the inactive buffer,
+ * Write canonical detection frame to the inactive buffer,
  * set the timestamp, worker FPS, and swap buffers to make data visible.
  *
  * This is the main function the worker should call after detection.
  */
 export function writeDetectionResults(
   views: DetectionBufferViews,
-  faceResult: FaceLandmarkerResult | null,
-  gestureResult: GestureRecognizerResult | null,
-  timestamp: number,
+  frame: RawDetectionFrame,
   workerFPS?: number,
 ): void {
   const bufferIdx = getInactiveBufferIndex(views)
 
   // Write timestamp
-  setBufferTimestamp(views, bufferIdx, timestamp)
+  setBufferTimestamp(views, bufferIdx, frame.timestamp)
 
   // Write worker FPS if provided
   if (workerFPS !== undefined) {
@@ -336,10 +323,10 @@ export function writeDetectionResults(
   }
 
   // Write face result
-  writeFaceResult(views, faceResult)
+  writeFaceResult(views, frame.detectors.face)
 
   // Write gesture result
-  writeGestureResult(views, gestureResult)
+  writeGestureResult(views, frame.detectors.hand)
 
   // Swap buffers to make new data visible to main thread
   swapDetectionBuffers(views)

@@ -19,6 +19,7 @@ import { normalizedToCellByResolution } from '@handwave/intent-engine'
 import type { WorkerStoreResource } from './workerStore'
 import type { WorkerVisionResource } from './workerVision'
 import { writeDetectionResults } from '../shared/detectionWrite'
+import { transformToRawFrame } from '../adapter/transformMediaPipe'
 import type { HandSpatialInfo } from '../vocabulary/detectionSchemas'
 
 // ============================================================================
@@ -155,15 +156,20 @@ export const workerDetectors = defineResource({
           )
         }
 
+        // Transform MediaPipe results to canonical format
+        const rawFrame = transformToRawFrame(
+          rawGestureResult,
+          rawFaceResult,
+          input.timestamp,
+        )
+
         // Write to SharedArrayBuffer (zero-copy!)
         const sharedBufferViews = workerStore.getSharedBufferViews()
         if (sharedBufferViews) {
           writeDetectionResults(
             sharedBufferViews,
-            rawFaceResult,
-            rawGestureResult,
-            input.timestamp,
-            input.workerFPS, // Pass FPS from workerUpdateLoop
+            rawFrame,
+            input.workerFPS, // Pass FPS separately for buffer metadata
           )
         }
 

@@ -11,29 +11,27 @@ import { hexToRgba, remap  } from '@handwave/rendering'
  */
 export const smileOverlayTask: RenderTask = ({
   drawer,
-  faceResult,
+  detectionFrame,
   mirrored,
   viewport,
   width,
   height,
 }) => {
-  if (
-    !faceResult?.faceBlendshapes?.length ||
-    !faceResult?.faceLandmarks?.length
-  )
-    return
+  const faces = detectionFrame?.detectors?.face
+  if (!faces || faces.length === 0) return
 
-  const blendshapes = faceResult.faceBlendshapes[0]?.categories ?? []
+  const face = faces[0]
+  const blendshapes = face.blendshapes ?? []
   const smileLeft =
-    blendshapes.find((b) => b.categoryName === 'mouthSmileLeft')?.score ?? 0
+    blendshapes.find((b) => b.name === 'mouthSmileLeft')?.score ?? 0
   const smileRight =
-    blendshapes.find((b) => b.categoryName === 'mouthSmileRight')?.score ?? 0
+    blendshapes.find((b) => b.name === 'mouthSmileRight')?.score ?? 0
 
   // Only activate when smiling
   const smileThreshold = 0.3
   if (smileLeft < smileThreshold && smileRight < smileThreshold) return
 
-  const landmarks = faceResult.faceLandmarks[0]
+  const landmarks = face.landmarks
   if (!landmarks) return
 
   // Transform original landmarks

@@ -5,7 +5,8 @@
  * Use these as a starting point for understanding your captured data.
  */
 
-import type { RecordedFrame, RecordingSession } from '@handwave/intent-engine'
+import { detectionKeywords } from '@handwave/intent-engine'
+import type { RecordedFrame, RecordingSession } from '@handwave/intent-engine';
 import {
   createGestureFixture,
   filterFrames,
@@ -54,7 +55,7 @@ export function findCleanGestures(
 ): Array<RecordedFrame> {
   return filterFrames(session, (frame) => {
     return (
-      frame.gestureResult?.hands.some((h) => h.gestureScore >= minScore) ??
+      frame.detectionFrame?.detectors?.hand?.some((h) => h.gestureScore >= minScore) ??
       false
     )
   })
@@ -66,14 +67,14 @@ export function findCleanGestures(
 export function findStableSequences(
   session: RecordingSession,
   gesture: string,
-  hand: 'Left' | 'Right',
+  hand: 'left' | 'right',
   minFrames = 10,
 ): Array<Array<RecordedFrame>> {
   const sequences: Array<Array<RecordedFrame>> = []
   let currentSequence: Array<RecordedFrame> = []
 
   for (const frame of session.frames) {
-    const hasGesture = frame.gestureResult?.hands.some(
+    const hasGesture = frame.detectionFrame?.detectors?.hand?.some(
       (h) => h.gesture === gesture && h.handedness === hand,
     )
 
@@ -102,7 +103,7 @@ export function analyzeGestureScores(session: RecordingSession) {
   const scoresByGesture: Record<string, Array<number>> = {}
 
   session.frames.forEach((frame) => {
-    frame.gestureResult?.hands.forEach((hand) => {
+    frame.detectionFrame?.detectors?.hand?.forEach((hand) => {
       if (!scoresByGesture[hand.gesture]) {
         scoresByGesture[hand.gesture] = []
       }
@@ -149,7 +150,7 @@ function distance3D(
  */
 export function analyzePinchDistances(
   session: RecordingSession,
-  handedness: 'Left' | 'Right',
+  handedness: 'left' | 'right',
 ) {
   console.log(`\n=== Pinch Analysis (${handedness} Hand) ===\n`)
 
@@ -162,8 +163,8 @@ export function analyzePinchDistances(
   }> = []
 
   session.frames.forEach((frame) => {
-    const hand = frame.gestureResult?.hands.find(
-      (h) => h.handedness === handedness,
+    const hand = frame.detectionFrame?.detectors?.hand?.find(
+      (h) => h.handedness === detectionKeywords.handedness[handedness],
     )
     if (!hand || hand.landmarks.length < 21) return
 
@@ -246,7 +247,7 @@ export function analyzeCellCoverage(session: RecordingSession) {
 /**
  * Generate test fixtures for all clear gestures
  */
-export async function generateAllGestureFixtures(
+export function generateAllGestureFixtures(
   session: RecordingSession,
   outputDir = 'src/core/lib/intent/__fixtures__/gestures',
 ) {
@@ -256,10 +257,10 @@ export async function generateAllGestureFixtures(
   console.log('\n=== Generating Fixtures ===\n')
 
   for (const gesture of gestures) {
-    for (const hand of ['Left', 'Right'] as const) {
+    for (const hand of ['left', 'right'] as const) {
       const frames = findGestureFrames(session, gesture, hand)
       const cleanFrames = frames.filter(
-        (f) => (f.gestureResult?.hands[0]?.gestureScore ?? 0) > 0.85,
+        (f) => (f.detectionFrame?.detectors?.hand?.[0]?.gestureScore ?? 0) > 0.85,
       )
 
       if (cleanFrames.length > 0) {
@@ -296,14 +297,14 @@ export async function completeAnalysis(jsonPath: string) {
   analyzeGestureScores(session)
 
   console.log('\n--- Pinch Detection ---')
-  analyzePinchDistances(session, 'Right')
-  analyzePinchDistances(session, 'Left')
+  analyzePinchDistances(session, 'right')
+  analyzePinchDistances(session, 'left')
 
   console.log('\n--- Cell Coverage ---')
   analyzeCellCoverage(session)
 
   console.log('\n--- Fixture Generation ---')
-  await generateAllGestureFixtures(session)
+  generateAllGestureFixtures(session)
 
   console.log('\n✅ Analysis complete!')
 }

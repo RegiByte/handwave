@@ -1,6 +1,18 @@
-import { GestureRecognizer } from '@mediapipe/tasks-vision'
 import { transformLandmarksToViewport } from '@handwave/mediapipe'
 import type { RenderTask } from '@handwave/mediapipe'
+import { convertToConnections } from '@handwave/mediapipe';
+
+// MediaPipe hand connections (21-point hand model)
+const HAND_CONNECTIONS = convertToConnections(
+  [0, 1], [1, 2], [2, 3], [3, 4],  // Thumb
+  [0, 5], [5, 6], [6, 7], [7, 8],  // Index
+  [0, 9], [9, 10], [10, 11], [11, 12],  // Middle
+  [0, 13], [13, 14], [14, 15], [15, 16],  // Ring
+  [0, 17], [17, 18], [18, 19], [19, 20],  // Pinky
+  [5, 9], [9, 13], [13, 17],  // Palm
+)
+
+
 
 /**
  * Hand Landmarks Configuration
@@ -27,13 +39,14 @@ export const createHandLandmarksTask = (
   const lineWidth = config?.lineWidth ?? 4
   const radius = config?.radius ?? 3
 
-  return ({ drawer, gestureResult, mirrored, viewport, width, height }) => {
-    if (!gestureResult?.landmarks?.length) return
+  return ({ drawer, detectionFrame, mirrored, viewport, width, height }) => {
+    const hands = detectionFrame?.detectors?.hand
+    if (!hands || hands.length === 0) return
 
-    for (const landmarks of gestureResult.landmarks) {
+    for (const hand of hands) {
       // Transform landmarks to viewport coordinates
       const transformedLandmarks = transformLandmarksToViewport(
-        landmarks,
+        hand.landmarks,
         viewport,
         width,
         height,
@@ -42,7 +55,7 @@ export const createHandLandmarksTask = (
 
       drawer.drawConnectors(
         transformedLandmarks,
-        GestureRecognizer.HAND_CONNECTIONS,
+        HAND_CONNECTIONS,
         {
           color: connectionColor,
           lineWidth,

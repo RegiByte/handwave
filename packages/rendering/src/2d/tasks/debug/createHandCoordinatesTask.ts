@@ -23,12 +23,15 @@ export const createHandCoordinatesTask = (
   const maxLandmarks = config?.maxLandmarks ?? 10
   const panelWidth = config?.panelWidth ?? 300
 
-  return ({ ctx, gestureResult, width, height }) => {
-    if (!gestureResult?.landmarks?.length) return
+  return ({ ctx, detectionFrame, width, height }) => {
+    const hands = detectionFrame?.detectors?.hand
+    if (!hands || hands.length === 0) return
 
     const lineHeight = 14
 
-    gestureResult.landmarks.forEach((landmarks, handIndex) => {
+    hands.forEach((hand) => {
+      const landmarks = hand.landmarks
+      const handIndex = hand.handIndex
       const panelHeight = Math.min(landmarks.length, maxLandmarks) * lineHeight + 30
 
       // Calculate panel position based on config

@@ -21,15 +21,17 @@ export function getFaceOvalIndices(): Array<number> {
  */
 export const faceMeshTask: RenderTask = ({
   drawer,
-  faceResult,
+  detectionFrame,
   mirrored,
   viewport,
   width,
   height,
 }) => {
-  if (!faceResult?.faceLandmarks?.length) return
+  const faces = detectionFrame?.detectors?.face
+  if (!faces || faces.length === 0) return
 
-  for (const landmarks of faceResult.faceLandmarks) {
+  for (const face of faces) {
+    const landmarks = face.landmarks
     // Transform landmarks to viewport coordinates
     const transformedLandmarks = transformLandmarksToViewport(
       landmarks,

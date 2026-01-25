@@ -15,10 +15,8 @@
 
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
-import type {
-  FaceLandmarkerResult,
-  GestureRecognizerResult,
-} from '@mediapipe/tasks-vision'
+import type { EnrichedDetectionFrame, RawDetectionFrame } from '@handwave/intent-engine'
+import { enrichDetectionFrame } from '@handwave/intent-engine'
 import { createAtom, createRenderLoop, createSubscription, createTaskPipeline } from '@handwave/system'
 import type { CameraAPI } from './camera'
 import type { CanvasAPI } from './canvas'
@@ -30,8 +28,8 @@ import type { RenderContext, RenderTask } from '../tasks/types'
 export type FrameData = {
   timestamp: number
   video: HTMLVideoElement
-  faceResult: FaceLandmarkerResult | null
-  gestureResult: GestureRecognizerResult | null
+  detectionFrame: RawDetectionFrame | null
+  enrichedDetectionFrame: EnrichedDetectionFrame | null
 }
 
 export type LoopState = {
@@ -86,8 +84,8 @@ type LoopContext = {
 
   // Mutable state (updated during loop)
   cachedFrameData: {
-    faceResult: FaceLandmarkerResult | null
-    gestureResult: GestureRecognizerResult | null
+    detectionFrame: RawDetectionFrame | null
+    enrichedDetectionFrame: EnrichedDetectionFrame | null
     viewport: { x: number; y: number; width: number; height: number } | null
   }
 
@@ -183,8 +181,8 @@ const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
   if (currentStreamVersion !== context.lastStreamVersion) {
     context.lastStreamVersion = currentStreamVersion
     context.cachedFrameData = {
-      faceResult: null,
-      gestureResult: null,
+      detectionFrame: null,
+      enrichedDetectionFrame: null,
       viewport: null,
     }
     context.frameRaters.videoStreamUpdate.reset()
@@ -312,8 +310,7 @@ const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
   }
 
   if (!hasVideoFrame) {
-    context.cachedFrameData.faceResult = null
-    context.cachedFrameData.gestureResult = null
+    context.cachedFrameData.detectionFrame = null
   }
 
   if (executed.videoStreamUpdate) {
@@ -362,10 +359,9 @@ const renderFrame = (context: LoopContext, timestamp: number, deltaMs: number) =
   if (context.detectionWorker.isSharedBufferEnabled()) {
     const sharedResults = context.detectionWorker.readDetectionResults()
     if (sharedResults) {
-      // Update cached frame data with results from SharedArrayBuffer
-      context.cachedFrameData.faceResult = sharedResults.faceResult
-      context.cachedFrameData.gestureResult = sharedResults.gestureResult
-
+      // Update cached frame data with canonical detection frame
+      context.cachedFrameData.detectionFrame = sharedResults.detectionFrame
+      context.cachedFrameData.enrichedDetectionFrame = enrichDetectionFrame(sharedResults.detectionFrame)
       // Update worker FPS in state
       const currentWorkerFPS = Math.round(sharedResults.workerFPS)
       if (currentWorkerFPS !== context.state.get().workerFPS) {
@@ -378,8 +374,8 @@ const renderFrame = (context: LoopContext, timestamp: number, deltaMs: number) =
       context.frame$.notify({
         timestamp: sharedResults.timestamp,
         video,
-        faceResult: sharedResults.faceResult,
-        gestureResult: sharedResults.gestureResult,
+        detectionFrame: sharedResults.detectionFrame,
+        enrichedDetectionFrame: context.cachedFrameData.enrichedDetectionFrame,
       })
     }
   }
@@ -393,8 +389,7 @@ const renderFrame = (context: LoopContext, timestamp: number, deltaMs: number) =
     width: context.canvas.width,
     height: context.canvas.height,
     video,
-    faceResult: context.cachedFrameData.faceResult,
-    gestureResult: context.cachedFrameData.gestureResult,
+    detectionFrame: context.cachedFrameData.enrichedDetectionFrame,
     timestamp,
     deltaMs,
     mirrored: context.state.get().mirrored,
@@ -496,8 +491,8 @@ export const loopResource = defineResource({
       offscreenCanvas,
       offscreenCtx,
       cachedFrameData: {
-        faceResult: null,
-        gestureResult: null,
+        detectionFrame: null,
+        enrichedDetectionFrame: null,
         viewport: null,
       },
       lastViewport: null,

@@ -179,13 +179,13 @@ export function determineEndReason(
   }
 
   // Check if hand tracking lost
-  const gestureResult = frame.gestureResult
-  if (!gestureResult || !gestureResult.hands || gestureResult.hands.length === 0) {
+  const hands = frame.detectionFrame?.detectors?.hand
+  if (!hands || hands.length === 0) {
     return intentKeywords.endReasons.timeout as EndReason
   }
 
   // Check if specific hand lost
-  const hand = gestureResult.hands.find(h => 
+  const hand = hands.find(h => 
     h.handedness.toLowerCase() === action.context.hand &&
     h.handIndex === action.context.handIndex
   )

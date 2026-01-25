@@ -23,10 +23,11 @@ export const createBlendshapesDisplayTask = (
   const maxVisible = config?.maxVisible ?? 20
   const panelWidth = config?.panelWidth ?? 280
 
-  return ({ ctx, faceResult }) => {
-    if (!faceResult?.faceBlendshapes?.length) return
+  return ({ ctx, detectionFrame }) => {
+    const faces = detectionFrame?.detectors?.face
+    if (!faces || faces.length === 0) return
 
-    const blendshapes = faceResult.faceBlendshapes[0]?.categories ?? []
+    const blendshapes = faces[0]?.blendshapes ?? []
     if (!blendshapes.length) return
 
     const lineHeight = 16
@@ -54,7 +55,7 @@ export const createBlendshapesDisplayTask = (
 
       // Name
       ctx.fillStyle = 'rgba(255,255,255,0.8)'
-      ctx.fillText(blendshape.categoryName.slice(0, 18), position.x + 8, y)
+      ctx.fillText(blendshape.name.slice(0, 18), position.x + 8, y)
 
       // Bar background
       const barX = position.x + 150

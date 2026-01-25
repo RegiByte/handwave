@@ -1,8 +1,4 @@
-import type {
-  FaceLandmarkerResult,
-  GestureRecognizerResult,
-  NormalizedLandmark,
-} from '@mediapipe/tasks-vision'
+import type { Landmark } from '@handwave/intent-engine'
 
 /**
  * Map normalized landmark coordinates (0-1) to viewport canvas coordinates
@@ -50,7 +46,7 @@ export const transformLandmarksToViewport = (
  * Rescale a normalized landmark from one viewport to another
  * 
  * NOTE: This is NOT needed for viewport changes during pause!
- * MediaPipe landmarks are normalized (0-1) relative to video dimensions,
+ * Landmarks are normalized (0-1) relative to video dimensions,
  * and render tasks transform them using the CURRENT viewport.
  * So landmarks automatically map correctly when viewport changes.
  * 
@@ -58,10 +54,10 @@ export const transformLandmarksToViewport = (
  * landmarks need to be transformed between different coordinate spaces.
  */
 export function rescaleLandmark(
-  landmark: NormalizedLandmark,
+  landmark: Landmark,
   fromViewport: { x: number; y: number; width: number; height: number },
   toViewport: { x: number; y: number; width: number; height: number },
-): NormalizedLandmark {
+): Landmark {
   // Convert from normalized to absolute pixels in old viewport
   const oldX = fromViewport.x + landmark.x * fromViewport.width
   const oldY = fromViewport.y + landmark.y * fromViewport.height
@@ -75,39 +71,6 @@ export function rescaleLandmark(
     y: newY,
     z: landmark.z, // Z is already normalized, no need to rescale
     visibility: landmark.visibility,
-  }
-}
-
-/**
- * Rescale face landmarks when viewport changes during pause
- */
-export function rescaleFaceResult(
-  result: FaceLandmarkerResult,
-  fromViewport: { x: number; y: number; width: number; height: number },
-  toViewport: { x: number; y: number; width: number; height: number },
-): FaceLandmarkerResult {
-  return {
-    ...result,
-    faceLandmarks: result.faceLandmarks.map((face) =>
-      face.map((landmark) => rescaleLandmark(landmark, fromViewport, toViewport)),
-    ),
-  }
-}
-
-/**
- * Rescale gesture/hand landmarks when viewport changes during pause
- */
-export function rescaleGestureResult(
-  result: GestureRecognizerResult,
-  fromViewport: { x: number; y: number; width: number; height: number },
-  toViewport: { x: number; y: number; width: number; height: number },
-): GestureRecognizerResult {
-  return {
-    ...result,
-    landmarks: result.landmarks.map((hand) =>
-      hand.map((landmark) => rescaleLandmark(landmark, fromViewport, toViewport)),
-    ),
-    worldLandmarks: result.worldLandmarks, // World landmarks are in 3D space, don't rescale
   }
 }
 

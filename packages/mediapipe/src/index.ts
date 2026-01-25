@@ -80,6 +80,36 @@ export {
 } from './detection/frameRater'
 
 // ============================================================================
+// Adapter Layer
+// ============================================================================
+
+export {
+  transformHandDetection,
+  transformFaceDetection,
+  transformAllHands,
+  transformAllFaces,
+  transformToRawFrame,
+  convertToConnections,
+  type Connection,
+} from './adapter/transformMediaPipe'
+
+// ============================================================================
+// Canonical Detection Types (re-exported from intent-engine)
+// ============================================================================
+
+export type {
+  RawDetectionFrame,
+  EnrichedDetectionFrame,
+  RawHandDetection,
+  RawFaceDetection,
+  EnrichedHandDetection,
+  EnrichedFaceDetection,
+  Landmark,
+  Category,
+  TransformationMatrix,
+} from '@handwave/intent-engine'
+
+// ============================================================================
 // Shared Buffer Utilities
 // ============================================================================
 
@@ -131,9 +161,10 @@ export {
   GESTURE_NAMES,
   HANDEDNESS,
   // Reconstruction functions
-  reconstructFaceLandmarkerResult,
-  reconstructGestureRecognizerResult,
-  reconstructDetectionResults,
+  reconstructHandDetections,
+  reconstructFaceDetections,
+  reconstructDetectionFrame,
+  getWorkerFPS,
   // Utilities
   hasDetectionData,
   getDetectionCounts,
@@ -164,11 +195,11 @@ export {
 export {
   type HandSpatialInfo,
   type SpatialUpdateMessage,
-  type Category,
   type ModelPaths,
   type DisplayContext,
   type FaceLandmarkerConfig,
   type GestureRecognizerConfig,
+  type Cell,
 } from './vocabulary/detectionSchemas'
 
 export {
@@ -189,8 +220,6 @@ export {
   mapLandmarkToViewport,
   transformLandmarksToViewport,
   rescaleLandmark,
-  rescaleFaceResult,
-  rescaleGestureResult,
 } from './tasks/utils'
 
 // ============================================================================

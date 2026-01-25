@@ -87,10 +87,12 @@ export const createHandCustomConnectionsTask = (
   const baseLineWidth = config?.lineWidth ?? 3
   const showDistanceColors = config?.showDistanceColors ?? true
 
-  return ({ drawer, gestureResult, mirrored, viewport, width, height }) => {
-    if (!gestureResult?.landmarks?.length) return
+  return ({ drawer, detectionFrame, mirrored, viewport, width, height }) => {
+    const hands = detectionFrame?.detectors?.hand
+    if (!hands || hands.length === 0) return
 
-    for (const landmarks of gestureResult.landmarks) {
+    for (const hand of hands) {
+      const landmarks = hand.landmarks
       const transformed = transformLandmarksToViewport(
         landmarks,
         viewport,

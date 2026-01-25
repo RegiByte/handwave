@@ -6,7 +6,7 @@
  */
 
 import type { RecordedFrame, RecordingSession} from '@handwave/intent-engine';
-import { recordingSessionSchema } from '@handwave/intent-engine'
+import { detectionKeywords, recordingSessionSchema } from '@handwave/intent-engine'
 
 // ============================================================================
 // Load & Validate
@@ -70,12 +70,12 @@ export function filterFrames(
 export function findGestureFrames(
   session: RecordingSession,
   gesture: string,
-  hand: 'Left' | 'Right',
+  hand: 'left' | 'right',
 ): Array<RecordedFrame> {
   return filterFrames(session, (frame) => {
     return (
-      frame.gestureResult?.hands.some(
-        (h) => h.gesture === gesture && h.handedness === hand,
+      frame.detectionFrame?.detectors?.hand?.some(
+        (h) => h.gesture === gesture && h.handedness === detectionKeywords.handedness[hand],
       ) ?? false
     )
   })
@@ -104,7 +104,7 @@ export function findHandCountFrames(
   count: number,
 ): Array<RecordedFrame> {
   return filterFrames(session, (frame) => {
-    return (frame.gestureResult?.hands.length ?? 0) === count
+    return (frame.detectionFrame?.detectors?.hand?.length ?? 0) === count
   })
 }
 
@@ -160,7 +160,7 @@ export const ${name} = ${JSON.stringify(fixture, null, 2)} as const
 export function createGestureFixture(
   session: RecordingSession,
   gesture: string,
-  hand: 'Left' | 'Right',
+  hand: 'left' | 'right',
   fixtureName?: string,
 ): string {
   const frames = findGestureFrames(session, gesture, hand)
@@ -192,11 +192,11 @@ export function getRecordingStats(session: RecordingSession): {
   let bothHandsFrames = 0
 
   session.frames.forEach((frame) => {
-    const hands = frame.gestureResult?.hands || []
+    const hands = frame.detectionFrame?.detectors?.hand || []
     hands.forEach((h) => gestures.add(h.gesture))
 
-    const hasLeft = hands.some((h) => h.handedness === 'Left')
-    const hasRight = hands.some((h) => h.handedness === 'Right')
+    const hasLeft = hands.some((h) => h.handedness === detectionKeywords.handedness.left)
+    const hasRight = hands.some((h) => h.handedness === detectionKeywords.handedness.right)
 
     if (hasLeft && hasRight) bothHandsFrames++
     else if (hasLeft) leftHandFrames++

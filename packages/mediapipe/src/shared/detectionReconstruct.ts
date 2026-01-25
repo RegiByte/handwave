@@ -1,7 +1,7 @@
 /**
  * Detection Result Reconstruction
  *
- * Transforms raw SharedArrayBuffer data back into MediaPipe-compatible objects.
+ * Transforms raw SharedArrayBuffer data back into canonical detection types.
  * The buffer stores only numeric data - we reconstruct the full objects here.
  *
  * Philosophy: Separation of storage (numbers) and meaning (objects).
@@ -9,11 +9,12 @@
  */
 
 import type {
+  RawDetectionFrame,
+  RawHandDetection,
+  RawFaceDetection,
+  Landmark,
   Category,
-  FaceLandmarkerResult,
-  GestureRecognizerResult,
-  NormalizedLandmark,
-} from '@mediapipe/tasks-vision'
+} from '@handwave/intent-engine'
 
 import type { DetectionBufferViews } from './detectionBuffer'
 import {
@@ -34,7 +35,6 @@ import {
   getTransformationMatrixViews,
   getWorldLandmarkViews,
 } from './detectionBuffer'
-import type { Matrix } from '../types'
 
 // ============================================================================
 // Blendshape Names (ARKit Compatible)
@@ -147,17 +147,16 @@ function reconstructLandmark(
   view: Float32Array,
   index: number,
   hasVisibility: boolean,
-): NormalizedLandmark {
+): Landmark {
   const components = hasVisibility
     ? LANDMARK_COMPONENTS
     : WORLD_LANDMARK_COMPONENTS
   const offset = index * components
 
-  const landmark: NormalizedLandmark = {
+  const landmark: Landmark = {
     x: view[offset],
     y: view[offset + 1],
     z: view[offset + 2],
-    visibility: hasVisibility ? view[offset + 3] : 0,
   }
 
   if (hasVisibility) {
@@ -174,8 +173,8 @@ function reconstructLandmarks(
   view: Float32Array,
   count: number,
   hasVisibility: boolean,
-): Array<NormalizedLandmark> {
-  const landmarks: Array<NormalizedLandmark> = []
+): Array<Landmark> {
+  const landmarks: Array<Landmark> = []
   for (let i = 0; i < count; i++) {
     landmarks.push(reconstructLandmark(view, i, hasVisibility))
   }
@@ -189,8 +188,7 @@ function reconstructBlendshapes(view: Float32Array): Array<Category> {
   const categories: Array<Category> = []
   for (let i = 0; i < BLENDSHAPES_COUNT; i++) {
     categories.push({
-      categoryName: BLENDSHAPE_NAMES[i],
-      displayName: BLENDSHAPE_NAMES[i],
+      name: BLENDSHAPE_NAMES[i],
       score: view[i],
       index: i,
     })
@@ -199,102 +197,86 @@ function reconstructBlendshapes(view: Float32Array): Array<Category> {
 }
 
 /**
- * Reconstruct FaceLandmarkerResult from the active buffer.
- * Returns null if no faces detected.
+ * Reconstruct canonical face detections from the active buffer.
+ * Returns empty array if no faces detected.
  */
-export function reconstructFaceLandmarkerResult(
+export function reconstructFaceDetections(
   views: DetectionBufferViews,
-): FaceLandmarkerResult | null {
+): RawFaceDetection[] {
   const activeIdx = getActiveBufferIndex(views)
   const faceCount = getBufferFaceCount(views, activeIdx)
 
   if (faceCount === 0) {
-    return null
+    return []
   }
 
   const faceLandmarkViews = getFaceLandmarkViews(views, activeIdx)
   const blendshapeViews = getBlendshapeViews(views, activeIdx)
   const transformViews = getTransformationMatrixViews(views, activeIdx)
 
-  const faceLandmarks: Array<Array<NormalizedLandmark>> = []
-  const faceBlendshapes: Array<{
-    headIndex: number
-    headName: string
-    categories: Array<Category>
-  }> = []
-  const facialTransformationMatrixes: Array<Matrix> = []
+  const faces: RawFaceDetection[] = []
 
   for (let i = 0; i < faceCount; i++) {
     // Reconstruct landmarks
-    faceLandmarks.push(
-      reconstructLandmarks(faceLandmarkViews[i], FACE_LANDMARKS_COUNT, true),
+    const landmarks = reconstructLandmarks(
+      faceLandmarkViews[i],
+      FACE_LANDMARKS_COUNT,
+      true,
     )
 
-    // Reconstruct blendshapes (Classifications type requires headIndex and headName)
-    faceBlendshapes.push({
-      headIndex: i,
-      headName: `face_${i}`,
-      categories: reconstructBlendshapes(blendshapeViews[i]),
-    })
+    // Reconstruct blendshapes
+    const blendshapes = reconstructBlendshapes(blendshapeViews[i])
 
-    // Copy transformation matrix (create new Float32Array to avoid shared reference)
-    // Matrix type requires rows, columns, and data
-    facialTransformationMatrixes.push({
-      rows: 4,
-      columns: 4,
-      data: transformViews[i],
-    } as unknown as Matrix)
+    // Reconstruct transformation matrix
+    const transformationMatrix = {
+      rows: 4 as const,
+      columns: 4 as const,
+      data: Array.from(transformViews[i]),
+    }
+
+    faces.push({
+      landmarks,
+      blendshapes,
+      transformationMatrix,
+    })
   }
 
-  // Cast through unknown to satisfy TypeScript - MediaPipe types are strict
-  // but our reconstruction matches the runtime structure
-  return {
-    faceLandmarks,
-    faceBlendshapes,
-    facialTransformationMatrixes,
-  } as FaceLandmarkerResult
+  return faces
 }
 
 /**
- * Reconstruct GestureRecognizerResult from the active buffer.
- * Returns null if no hands detected.
+ * Reconstruct canonical hand detections from the active buffer.
+ * Returns empty array if no hands detected.
  */
-export function reconstructGestureRecognizerResult(
+export function reconstructHandDetections(
   views: DetectionBufferViews,
-): GestureRecognizerResult | null {
+): RawHandDetection[] {
   const activeIdx = getActiveBufferIndex(views)
   const handCount = getBufferHandCount(views, activeIdx)
 
   if (handCount === 0) {
-    return null
+    return []
   }
 
   const handLandmarkViews = getHandLandmarkViews(views, activeIdx)
   const worldLandmarkViews = getWorldLandmarkViews(views, activeIdx)
   const handMetadataViews = getHandMetadataViews(views, activeIdx)
 
-  const landmarks: Array<Array<NormalizedLandmark>> = []
-  const worldLandmarks: Array<Array<NormalizedLandmark>> = []
-  const handednesses: Array<{
-    headIndex: number
-    headName: string
-    categories: Array<Category>
-  }> = []
-  const gestures: Array<{
-    headIndex: number
-    headName: string
-    categories: Array<Category>
-  }> = []
+  const hands: RawHandDetection[] = []
 
   for (let i = 0; i < handCount; i++) {
     // Reconstruct landmarks
-    landmarks.push(
-      reconstructLandmarks(handLandmarkViews[i], HAND_LANDMARKS_COUNT, true),
+    const landmarks = reconstructLandmarks(
+      handLandmarkViews[i],
+      HAND_LANDMARKS_COUNT,
+      true,
     )
 
     // Reconstruct world landmarks
-    worldLandmarks.push(
-      reconstructLandmarks(worldLandmarkViews[i], HAND_LANDMARKS_COUNT, false),
+    const worldLandmarks = reconstructLandmarks(
+      worldLandmarkViews[i],
+      HAND_LANDMARKS_COUNT,
+      false,
     )
 
     // Reconstruct handedness from metadata
@@ -313,66 +295,68 @@ export function reconstructGestureRecognizerResult(
       1,
     )
 
-    // Handedness (Classifications type requires headIndex and headName)
-    handednesses.push({
-      headIndex: i,
-      headName: `hand_${i}`,
-      categories: [
-        {
-          categoryName: HANDEDNESS_NAMES[handednessValue] || 'Unknown',
-          displayName: HANDEDNESS_NAMES[handednessValue] || 'Unknown',
-          score: handednessScoreView[0],
-          index: handednessValue,
-        },
-      ],
-    })
+    // Get handedness name (normalized to lowercase)
+    const handednessName = HANDEDNESS_NAMES[handednessValue] || 'Unknown'
+    const handedness = handednessName.toLowerCase() as
+      | 'left'
+      | 'right'
+      | 'unknown'
 
-    // Gesture (Classifications type requires headIndex and headName)
-    gestures.push({
-      headIndex: i,
-      headName: `gesture_${i}`,
-      categories: [
-        {
-          categoryName: GESTURE_NAMES[gestureIndex] || 'None',
-          displayName: GESTURE_NAMES[gestureIndex] || 'None',
-          score: gestureScoreView[0],
-          index: gestureIndex,
-        },
-      ],
+    // Get gesture name
+    const gesture = GESTURE_NAMES[gestureIndex] || 'None'
+
+    hands.push({
+      handedness,
+      handednessScore: handednessScoreView[0],
+      gesture,
+      gestureScore: gestureScoreView[0],
+      landmarks,
+      worldLandmarks,
     })
   }
 
-  // Cast through unknown to satisfy TypeScript - MediaPipe types are strict
-  // but our reconstruction matches the runtime structure
-  // Note: MediaPipe uses both 'handedness' and 'handednesses' in different versions
-  return {
-    landmarks,
-    worldLandmarks,
-    handedness: handednesses, // Legacy property name
-    // handednesses, // New property name
-    handednesses: [], // don't use this, it's deprecated
-    gestures,
-  } as unknown as GestureRecognizerResult
+  return hands
 }
 
 /**
- * Reconstruct both face and gesture results from the active buffer.
- * Convenience function for getting all detection results at once.
+ * Reconstruct canonical detection frame from the active buffer.
+ * Main function for reading detection data from SharedArrayBuffer.
  */
-export function reconstructDetectionResults(views: DetectionBufferViews): {
-  faceResult: FaceLandmarkerResult | null
-  gestureResult: GestureRecognizerResult | null
-  timestamp: number
-  workerFPS: number
-} {
+export function reconstructDetectionFrame(
+  views: DetectionBufferViews,
+): RawDetectionFrame {
   const activeIdx = getActiveBufferIndex(views)
+  const timestamp = getBufferTimestamp(views, activeIdx)
 
-  return {
-    faceResult: reconstructFaceLandmarkerResult(views),
-    gestureResult: reconstructGestureRecognizerResult(views),
-    timestamp: getBufferTimestamp(views, activeIdx),
-    workerFPS: getBufferWorkerFPS(views, activeIdx),
+  // Reconstruct hands and faces
+  const hands = reconstructHandDetections(views)
+  const faces = reconstructFaceDetections(views)
+
+  // Build canonical frame
+  const frame: RawDetectionFrame = {
+    timestamp,
+    detectors: {},
   }
+
+  // Add hands if present
+  if (hands.length > 0) {
+    frame.detectors.hand = hands
+  }
+
+  // Add faces if present
+  if (faces.length > 0) {
+    frame.detectors.face = faces
+  }
+
+  return frame
+}
+
+/**
+ * Get worker FPS from the active buffer.
+ */
+export function getWorkerFPS(views: DetectionBufferViews): number {
+  const activeIdx = getActiveBufferIndex(views)
+  return getBufferWorkerFPS(views, activeIdx)
 }
 
 // ============================================================================
