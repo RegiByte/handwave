@@ -276,37 +276,37 @@ export const haltWorkerTask = defineTask({
 
 /**
  * Push a video frame to the worker for detection
- * Main thread sends ImageBitmap, worker stores it for next detection tick
+ * Main thread sends VideoFrame (244x faster than ImageBitmap), worker stores it for next detection tick
  */
 export const pushFrameTask = defineTask({
   input: z.object({
     /**
      * SSR Compatibility Note:
      * 
-     * We use z.any() instead of z.instanceof(ImageBitmap) because:
-     * 1. ImageBitmap is a browser-only API that doesn't exist in Node.js
+     * We use z.any() instead of z.instanceof(VideoFrame) because:
+     * 1. VideoFrame is a browser-only API that doesn't exist in Node.js
      * 2. During SSR/build, even with defaultSsr: false, module evaluation happens server-side
-     * 3. z.instanceof(ImageBitmap) would throw "ImageBitmap is not defined" during bundling
+     * 3. z.instanceof(VideoFrame) would throw "VideoFrame is not defined" during bundling
      * 
      * This is safe because:
      * - parseIO: false means Zod doesn't validate this at runtime anyway
      * - The actual code only runs client-side (Workers API is browser-only)
      * - TypeScript still enforces the correct type at compile time
      */
-    frame: z.any(), // Actually ImageBitmap, but z.instanceof() breaks SSR builds
+    frame: z.any(), // Actually ImageBitmap | VideoFrame, but z.instanceof() breaks SSR builds
     timestamp: z.number(),
   }),
   output: z.object({
     received: z.boolean(),
   }),
-  parseIO: false, // ImageBitmap can't be parsed by Zod
+  parseIO: false, // VideoFrame can't be parsed by Zod
   execute: async (input) => {
     if (!workerSystem) {
       throw new Error('System not initialized - call initializeWorker first')
     }
 
-    // TypeScript knows this is ImageBitmap from the function signature
-    workerSystem.workerDetectors.pushFrame(input.frame as ImageBitmap, input.timestamp)
+    // TypeScript knows this is ImageBitmap | VideoFrame from the function signature
+    workerSystem.workerDetectors.pushFrame(input.frame as ImageBitmap | VideoFrame, input.timestamp)
 
     return Promise.resolve({
       received: true,

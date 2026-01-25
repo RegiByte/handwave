@@ -88,7 +88,6 @@ type LoopContext = {
   cachedFrameData: {
     faceResult: FaceLandmarkerResult | null
     gestureResult: GestureRecognizerResult | null
-    videoFrame: ImageBitmap | null
     viewport: { x: number; y: number; width: number; height: number } | null
   }
 
@@ -99,9 +98,9 @@ type LoopContext = {
   // Frame push tracking for metrics
   framePushState: {
     lastPushTimestamp: number
-    lastBitmapCreationMs: number
+    lastFrameCreationMs: number
     totalFramesPushed: number
-    totalBitmapCreationMs: number
+    totalFrameCreationMs: number
   }
 
   // Subscriptions
@@ -155,7 +154,7 @@ const createFrameRaters = (frameRater: FrameRaterAPI) => {
       intervalMs: 1000 / 30,
     }),
     framePush: frameRater.throttled('framePush', {
-      intervalMs: 1000 / 30, // Push frames at 30 FPS
+      intervalMs: 1000 / 25, // Push frames at 30 FPS
     }),
     backdrop: frameRater.throttled('backdrop', {
       intervalMs: 1000 / 5,
@@ -167,9 +166,9 @@ type LoopFrameRaterKey = 'backdrop' | 'videoStreamUpdate'
 type LoopShouldRun = Record<LoopFrameRaterKey, boolean>
 
 /**
- * Update phase - sends frames to worker (async, fire-and-forget)
+ * Update phase - sends frames to worker (synchronous, fire-and-forget)
  */
-const updateAsync = async (context: LoopContext, timestamp: number, deltaMs: number) => {
+const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
   const video = context.video
   const isPaused = context.state.get().paused
 
@@ -183,13 +182,9 @@ const updateAsync = async (context: LoopContext, timestamp: number, deltaMs: num
   const currentStreamVersion = context.cameraState.get().streamVersion ?? 0
   if (currentStreamVersion !== context.lastStreamVersion) {
     context.lastStreamVersion = currentStreamVersion
-    if (context.cachedFrameData.videoFrame) {
-      context.cachedFrameData.videoFrame.close()
-    }
     context.cachedFrameData = {
       faceResult: null,
       gestureResult: null,
-      videoFrame: null,
       viewport: null,
     }
     context.frameRaters.videoStreamUpdate.reset()
@@ -222,27 +217,28 @@ const updateAsync = async (context: LoopContext, timestamp: number, deltaMs: num
 
   // Push frame to worker for detection (constant stream)
   if (hasVideoFrame && shouldPushFrame && context.detectionWorker.isInitialized()) {
-    const bitmapStartTime = performance.now()
+    const frameStartTime = performance.now()
 
     try {
-      // Create ImageBitmap from video
-      const bitmap = await createImageBitmap(video)
-      const bitmapCreationMs = performance.now() - bitmapStartTime
+      // Create VideoFrame from video (244x faster than ImageBitmap!)
+      // VideoFrame expects timestamp in microseconds
+      const videoFrame = new VideoFrame(video, { timestamp: timestamp * 1000 })
+      const frameCreationMs = performance.now() - frameStartTime
 
-      // Track bitmap creation time
-      context.framePushState.lastBitmapCreationMs = bitmapCreationMs
-      context.framePushState.totalBitmapCreationMs += bitmapCreationMs
+      // Track metrics
+      context.framePushState.lastFrameCreationMs = frameCreationMs
+      context.framePushState.totalFrameCreationMs += frameCreationMs
       context.framePushState.totalFramesPushed += 1
 
       // Log metrics every 60 frames (~2 seconds at 30 FPS)
       if (context.framePushState.totalFramesPushed % 60 === 0) {
-        const avgBitmapMs = context.framePushState.totalBitmapCreationMs / context.framePushState.totalFramesPushed
+        const avgFrameMs = context.framePushState.totalFrameCreationMs / context.framePushState.totalFramesPushed
         const workerFPS = context.state.get().workerFPS
         const mainFPS = context.state.get().fps
         
         console.log('[Loop Metrics]', {
-          avgBitmapCreationMs: avgBitmapMs.toFixed(2),
-          lastBitmapMs: bitmapCreationMs.toFixed(2),
+          avgFrameCreationMs: avgFrameMs.toFixed(2),
+          lastFrameMs: frameCreationMs.toFixed(2),
           timeSinceLastPush: timeSinceLastPush.toFixed(2),
           workerFPS,
           mainFPS,
@@ -251,7 +247,7 @@ const updateAsync = async (context: LoopContext, timestamp: number, deltaMs: num
       }
 
       // Send to worker (zero-copy transfer)
-      context.detectionWorker.pushFrame(bitmap, timestamp)
+      context.detectionWorker.pushFrame(videoFrame, timestamp)
       context.framePushState.lastPushTimestamp = timestamp
 
       context.frameRaters.framePush.recordExecution()
@@ -260,7 +256,8 @@ const updateAsync = async (context: LoopContext, timestamp: number, deltaMs: num
     }
   }
 
-  // Cache video frame for rendering
+  // Cache video frame for rendering (when paused)
+  // Draw directly to offscreen canvas - no ImageBitmap creation needed!
   if (!isPaused && hasVideoFrame && shouldRun.videoStreamUpdate) {
     const cacheViewport = calculateViewport(
       video.videoWidth,
@@ -309,22 +306,9 @@ const updateAsync = async (context: LoopContext, timestamp: number, deltaMs: num
       )
     }
 
-    try {
-      if (context.cachedFrameData.videoFrame) {
-        context.cachedFrameData.videoFrame.close()
-      }
-      context.cachedFrameData.videoFrame = await createImageBitmap(
-        context.offscreenCanvas,
-        cacheViewport.x,
-        cacheViewport.y,
-        cacheViewport.width,
-        cacheViewport.height,
-      )
-      context.cachedFrameData.viewport = cacheViewport
-      executed.videoStreamUpdate = true
-    } catch (error) {
-      console.warn('Failed to cache video frame:', error)
-    }
+    // Store viewport for paused rendering - no ImageBitmap needed!
+    context.cachedFrameData.viewport = cacheViewport
+    executed.videoStreamUpdate = true
   }
 
   if (!hasVideoFrame) {
@@ -415,7 +399,6 @@ const renderFrame = (context: LoopContext, timestamp: number, deltaMs: number) =
     deltaMs,
     mirrored: context.state.get().mirrored,
     paused: isPaused,
-    cachedVideoFrame: context.cachedFrameData?.videoFrame ?? null,
     viewport,
     cachedViewport: context.cachedFrameData.viewport,
     frameRaters: context.frameRaters,
@@ -428,6 +411,7 @@ const renderFrame = (context: LoopContext, timestamp: number, deltaMs: number) =
       renderExecuted[key] = true
     },
     offscreenCtx: context.offscreenCtx,
+    offscreenCanvas: context.offscreenCanvas,
   } satisfies RenderContext
 
   // Execute all render tasks through the pipeline
@@ -514,7 +498,6 @@ export const loopResource = defineResource({
       cachedFrameData: {
         faceResult: null,
         gestureResult: null,
-        videoFrame: null,
         viewport: null,
       },
       lastViewport: null,
@@ -522,24 +505,28 @@ export const loopResource = defineResource({
       lastStreamVersion: camera.state.get().streamVersion ?? 0,
       framePushState: {
         lastPushTimestamp: 0,
-        lastBitmapCreationMs: 0,
+        lastFrameCreationMs: 0,
         totalFramesPushed: 0,
-        totalBitmapCreationMs: 0,
+        totalFrameCreationMs: 0,
       },
       frame$,
       state,
     })
 
     /**
-     * beforeRender hook - update phase (async operations)
+     * beforeRender hook - update phase (synchronous operations)
      */
     const beforeRender = (context: LoopContext, timestamp: number, deltaMs: number) => {
       context.lastUpdateTimestamp = timestamp
 
-      // Fire-and-forget async update
-      updateAsync(context, timestamp, deltaMs).catch((error) => {
+     setTimeout(() => {
+       // Synchronous update - no async operations needed!
+       try {
+        update(context, timestamp, deltaMs)
+      } catch (error) {
         console.error('[Loop] Update error:', error)
-      })
+      }
+     }, 0)
     }
 
     /**
@@ -593,13 +580,6 @@ export const loopResource = defineResource({
           s.running = false
         })
         renderLoop.stop()
-
-        // Cleanup cached video frame
-        const context = renderLoop.getContext()
-        if (context?.cachedFrameData.videoFrame) {
-          context.cachedFrameData.videoFrame.close()
-          context.cachedFrameData.videoFrame = null
-        }
       },
 
       pause: () => {

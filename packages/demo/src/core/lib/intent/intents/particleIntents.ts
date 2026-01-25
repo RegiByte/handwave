@@ -12,7 +12,7 @@
  * = Spawn colored particles!
  */
 
-import { bidirectional, gestures, intent, pinches } from '@handwave/intent-engine'
+import { allOf, bidirectional, gestures, intent, pinches } from '@handwave/intent-engine'
 
 // ============================================================================
 // TEMPORAL DEFAULTS
@@ -253,13 +253,20 @@ export const spawnYellowWithModifier = intent({
  * when you make the peace sign with both hands. The bidirectional pattern
  * ensures both hands must be showing victory simultaneously.
  * 
- * Priority 15: Higher than other spawn intents - this is a special effect.
  */
 export const spawnFromFaceOutline = intent({
   id: 'particles:spawn:face-outline',
   pattern: bidirectional(
     gestures.victory,
     gestures.victory
+  ).or(
+    // Claw shape, all fingers pinching, no other gesture should be active
+    allOf(
+      pinches.index,
+      pinches.middle,
+      pinches.ring,
+      pinches.pinky,
+    )
   ),
   temporal: {
     minDuration: defaultDuration,

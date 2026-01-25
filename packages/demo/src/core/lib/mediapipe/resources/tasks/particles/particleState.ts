@@ -30,6 +30,7 @@ export type ParticleArrays = {
   vy: Array<number>
   life: Array<number>     // 0-1 (for future fade effects)
   colors: Array<string>   // hex color
+  rgbCache: Array<[number, number, number]>  // cached RGB values for fast rendering
   sourceIntents: Array<string>
   trails: Array<Array<{ x: number, y: number }>> // position history for trails
 
@@ -92,7 +93,7 @@ export type SpawnParticleOptions = {
 export const MAX_PARTICLES = 1500
 export const SPAWN_RATE = 3 // particles per frame
 export const PARTICLE_RADIUS = 3
-export const GLOW_RADIUS = 8
+export const GLOW_RADIUS = 6
 export const DAMPING = 0.995 // velocity damping (higher = less damping, more movement)
 
 // Force strengths
@@ -118,7 +119,7 @@ export const SPAWN_VELOCITY = 1.31415 // Higher initial velocity
 export const SPAWN_VELOCITY_BIAS = 42
 export const SPAWN_BURST_FRAMES = 3
 export const SPAWN_BURST_RATE = 100
-export const TRAIL_LENGTH = 3 // Number of historical positions to keep (motion blur effect)
+export const TRAIL_LENGTH = 1 // Number of historical positions to keep (motion blur effect)
 
 // Colors by intent type
 export const COLORS = {
@@ -163,6 +164,7 @@ export function createParticleArrays(capacity: number): ParticleArrays {
     vy: new Array(capacity),
     life: new Array(capacity),
     colors: new Array(capacity),
+    rgbCache: new Array(capacity),
     sourceIntents: new Array(capacity),
     trails,
     activeIndices: [],
@@ -291,6 +293,7 @@ export function spawnParticle(state: ParticleState, options: SpawnParticleOption
   particles.vy[idx] = Math.sin(angle) * randomSpeed + (velocityBias?.y ?? 0)
   particles.life[idx] = 1.0
   particles.colors[idx] = color
+  particles.rgbCache[idx] = chroma(color).rgb() // Cache RGB for fast rendering
   particles.sourceIntents[idx] = sourceIntent
   particles.trails[idx] = [{ x: position.x, y: position.y }]
 

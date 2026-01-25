@@ -17,7 +17,6 @@ export type RenderContext = {
   deltaMs: number
   mirrored: boolean
   paused: boolean
-  cachedVideoFrame: ImageBitmap | null
   viewport: {
     x: number
     y: number
@@ -30,6 +29,7 @@ export type RenderContext = {
     width: number
     height: number
   } | null
+  offscreenCanvas: HTMLCanvasElement
   frameRaters: {
     rendering: ReturnType<FrameRaterAPI['variable']>
     videoStreamUpdate: ReturnType<FrameRaterAPI['throttled']>

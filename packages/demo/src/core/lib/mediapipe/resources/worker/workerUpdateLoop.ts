@@ -4,24 +4,19 @@
  * Hybrid architecture: RAF loop for detection + event-driven frame pushing.
  * Main thread pushes frames to canvas, worker detects at max speed.
  *
- * Philosophy: Worker owns its timeline. Main thread renders, worker detects.
+ * Worker owns its timeline. Main thread renders, worker detects.
  * Results flow via SharedArrayBuffer (zero-copy).
  * RAF loop ensures low latency by detecting as fast as possible.
  *
- * Session 52: Hybrid approach - RAF loop + event-driven frame updates.
  */
 
 import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
+import { createSubscription } from '@handwave/system'
 import type { WorkerDetectorsResource } from './workerDetectors'
 import type { WorkerStoreResource } from './workerStore'
 import type { FrameRaterAPI } from '@/core/lib/mediapipe/resources/frameRater'
 import type { HandSpatialInfo } from '@/core/lib/mediapipe/vocabulary/detectionSchemas'
-import { createSubscription } from '@handwave/system'
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export type LoopEvent =
   | { type: 'started' }
@@ -30,10 +25,6 @@ export type LoopEvent =
   | { type: 'resumed' }
   | { type: 'error'; error: string }
   | { type: 'spatialUpdate'; timestamp: number; hands: Array<HandSpatialInfo> }
-
-// ============================================================================
-// Resource Definition
-// ============================================================================
 
 export const workerUpdateLoop = defineResource({
   dependencies: ['workerStore', 'workerDetectors', 'frameRater'],

@@ -208,7 +208,7 @@ export function applySingleAxisSpiralForce(
   const smoothPhase = particlePhase * particlePhase * (3 - 2 * particlePhase)
 
   // Wider range with non-linear distribution: 0.5 to 1.7 (±40% variation)
-  const spiralVariation = 0.5 + smoothPhase * 1.2
+  const spiralVariation = 0.5 + smoothPhase * 1.5
   const a = 40 * spiralVariation
 
   // Target radius for current angle along the golden spiral
@@ -260,6 +260,9 @@ export function applySingleAxisSpiralForce(
  * SoA version: operates on particle at given index.
  * Returns distance to vortex center for stability-breaking logic.
  */
+
+// Golden ratio for natural spiral
+const PHI = 1.618033988749895
 export function applyTripleAxisSpiralForce(
   particles: ParticleArrays,
   index: number,
@@ -280,7 +283,7 @@ export function applyTripleAxisSpiralForce(
     return { shouldDelete: true, distance: dist }
   }
 
-  const minDist = 8
+  const minDist = 10
   const safeDist = Math.max(dist, minDist)
 
   // THREE-AXIS SPIRAL: Assign particles to one of three diagonal axes
@@ -304,8 +307,6 @@ export function applyTripleAxisSpiralForce(
   // Current angle from center in the rotated coordinate system
   const angle = Math.atan2(rotatedDy, rotatedDx)
 
-  // Golden ratio for natural spiral
-  const PHI = 1.618033988749895
 
   // Logarithmic spiral parameter
   const b = (2 / Math.PI) * Math.log(PHI)
@@ -321,7 +322,7 @@ export function applyTripleAxisSpiralForce(
   const smoothPhase = particlePhase * particlePhase * (3 - 2 * particlePhase)
 
   // Wider range with non-linear distribution: 0.5 to 1.7 (±40% variation)
-  const spiralVariation = 0.5 + smoothPhase * 1.2
+  const spiralVariation = 0.5 + smoothPhase * 1.5
   const a = 40 * spiralVariation
 
   // Target radius for current angle along the golden spiral
@@ -488,7 +489,7 @@ export function updateParticle(
   const dt = deltaMs / 1000
 
   // Store current position before updating (for trails)
-  if (frameCount % 2 === index % 2) {
+  if (frameCount % 2 === 0 && index % 2 === 0 || frameCount % 2 === 1 && index % 2 === 1) {
     particles.trails[index].push({ x: particles.x[index], y: particles.y[index] })
   }
   if (particles.trails[index].length > TRAIL_LENGTH) {

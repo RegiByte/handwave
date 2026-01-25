@@ -3,33 +3,33 @@ import type { RenderTask } from './types'
 /**
  * Render task: Draw the video frame as foreground
  * Respects the mirrored state for selfie mode and viewport aspect ratio
- * When paused, redraws the cached frozen frame at current viewport position
- * Uses ImageBitmap for GPU-resident cached frames (much faster!)
+ * When paused, redraws the cached frozen frame from offscreen canvas
+ * No ImageBitmap creation needed - direct canvas-to-canvas copy!
  */
 export const videoForegroundTask: RenderTask = ({
   ctx,
   video,
   mirrored,
   paused,
-  cachedVideoFrame,
   viewport,
   cachedViewport,
   shouldRender,
+  offscreenCanvas,
 }) => {
-  // When paused with cached frame (ImageBitmap)
-  if (paused && cachedVideoFrame && cachedViewport) {
+  // When paused with cached frame (from offscreen canvas)
+  if (paused && cachedViewport) {
     if (!shouldRender.videoForeground) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.9)'
       ctx.fillRect(viewport.x, viewport.y, viewport.width, viewport.height)
       return
     }
-    // ImageBitmap can be drawn directly with drawImage - GPU-to-GPU!
+    // Draw from offscreen canvas - no ImageBitmap needed!
     ctx.drawImage(
-      cachedVideoFrame,
-      0, // Source X
-      0, // Source Y
-      cachedVideoFrame.width, // Source width
-      cachedVideoFrame.height, // Source height
+      offscreenCanvas,
+      cachedViewport.x, // Source X
+      cachedViewport.y, // Source Y
+      cachedViewport.width, // Source width
+      cachedViewport.height, // Source height
       viewport.x, // Dest X (current viewport position)
       viewport.y, // Dest Y
       viewport.width, // Dest width (scaled to current viewport)
