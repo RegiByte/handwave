@@ -1,5 +1,5 @@
-import type { RenderTask } from './types'
 import type { LoopResource } from '@handwave/mediapipe'
+import type { RenderTask } from './types'
 
 /**
  * Render task: Show pause indicator

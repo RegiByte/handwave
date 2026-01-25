@@ -279,7 +279,7 @@ export const spawnFromFaceOutline = intent({
 // EXPORT ALL INTENTS
 // ============================================================================
 
-export const particleIntentsV2 = [
+export const particleIntents = [
   // Gesture intents (works with any hand - engine creates per-hand instances)
   vortexParticles,
   fingerVortexLeft,
@@ -309,4 +309,4 @@ export type FingerVortexRightIntent = typeof fingerVortexRight
 export type RepelIntent = typeof repelParticles
 export type ClearIntent = typeof clearParticles
 
-export type ParticleIntent = (typeof particleIntentsV2)[number]
+export type ParticleIntent = (typeof particleIntents)[number]

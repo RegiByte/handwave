@@ -1,8 +1,7 @@
 import type { GestureRecognizerResult } from '@mediapipe/tasks-vision'
-import type { GridConfig, GridResolution } from '@handwave/intent-engine';
+import type { GridConfig, GridResolution } from '@handwave/intent-engine'
 import { DEFAULT_GRID_PRESETS, intentKeywords } from '@handwave/intent-engine'
-import type { SpatialUpdateMessage } from '@handwave/mediapipe'
-import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
+import type { SpatialUpdateMessage, RenderTask } from '@handwave/mediapipe'
 
 /**
  * Render task: Multi-Resolution Grid Overlay
@@ -507,20 +506,20 @@ function drawHandPositionsFromGesture(
       ctx.strokeStyle = style.color
         .replace('0.25', '0.8')
         .replace('0.3', '0.8')
-        .replace('0.4', '0.8') // Increase opacity for line
+        .replace('0.4', '0.8')
       ctx.lineWidth = 1.5
-      ctx.setLineDash([5, 5]) // Dashed line
+      ctx.setLineDash([5, 5])
       ctx.beginPath()
       ctx.moveTo(handX, handY)
       ctx.lineTo(cellCenterX, cellCenterY)
       ctx.stroke()
-      ctx.setLineDash([]) // Reset to solid line
+      ctx.setLineDash([])
 
       // Draw dot at cell center
       ctx.fillStyle = style.color
         .replace('0.25', '0.6')
         .replace('0.3', '0.6')
-        .replace('0.4', '0.6') // Increase opacity for dot
+        .replace('0.4', '0.6')
       ctx.beginPath()
       ctx.arc(cellCenterX, cellCenterY, 4, 0, Math.PI * 2)
       ctx.fill()
@@ -545,7 +544,6 @@ function drawHandPositionsFromGesture(
     if (isInSafeZone) {
       ctx.fillStyle = handIndex === 0 ? '#00FF88' : '#FF8800'
     } else {
-      // Red/orange for hands in dead zone
       ctx.fillStyle = handIndex === 0 ? '#FF4444' : '#FF8844'
     }
     ctx.beginPath()
@@ -586,7 +584,7 @@ function drawHandPositionsFromGesture(
         ctx.strokeStyle = style.color
           .replace('0.25', '0.6')
           .replace('0.3', '0.6')
-          .replace('0.4', '0.6') // Increase opacity for highlight
+          .replace('0.4', '0.6')
         ctx.lineWidth = 2
         ctx.strokeRect(
           safeZone.x + gridCol * gridCellWidth,

@@ -210,7 +210,7 @@ const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
   // Check if we should push frame (constant stream, no backpressure)
   const timeSinceLastPush = timestamp - context.framePushState.lastPushTimestamp
   const shouldPushFrame =
-    !isPaused && 
+    !isPaused &&
     context.frameRaters.framePush.shouldExecute(deltaMs)
 
   const executed: Partial<Record<LoopFrameRaterKey, boolean>> = {}
@@ -235,7 +235,7 @@ const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
         const avgFrameMs = context.framePushState.totalFrameCreationMs / context.framePushState.totalFramesPushed
         const workerFPS = context.state.get().workerFPS
         const mainFPS = context.state.get().fps
-        
+
         console.log('[Loop Metrics]', {
           avgFrameCreationMs: avgFrameMs.toFixed(2),
           lastFrameMs: frameCreationMs.toFixed(2),
@@ -519,14 +519,14 @@ export const loopResource = defineResource({
     const beforeRender = (context: LoopContext, timestamp: number, deltaMs: number) => {
       context.lastUpdateTimestamp = timestamp
 
-     setTimeout(() => {
-       // Synchronous update - no async operations needed!
-       try {
-        update(context, timestamp, deltaMs)
-      } catch (error) {
-        console.error('[Loop] Update error:', error)
-      }
-     }, 0)
+      setTimeout(() => {
+        // Synchronous update - no async operations needed!
+        try {
+          update(context, timestamp, deltaMs)
+        } catch (error) {
+          console.error('[Loop] Update error:', error)
+        }
+      }, 0)
     }
 
     /**

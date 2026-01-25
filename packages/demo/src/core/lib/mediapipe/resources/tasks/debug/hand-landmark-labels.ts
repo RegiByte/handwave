@@ -1,5 +1,5 @@
 import { mapLandmarkToViewport } from '@handwave/mediapipe'
-import type { RenderTask } from '../types'
+import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
 
 /**
  * Render task: Show hand landmark indices and labels

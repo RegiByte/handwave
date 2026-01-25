@@ -1,5 +1,5 @@
 import { transformLandmarksToViewport } from '@handwave/mediapipe'
-import type { RenderTask } from '../types'
+import type { RenderTask } from '@/core/lib/mediapipe/resources/tasks/types'
 import { remap } from '@/core/lib/weightedMath'
 import { createColorScale, hexToRgba, mixColors } from '@/core/lib/colors'
 

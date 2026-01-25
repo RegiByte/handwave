@@ -22,7 +22,7 @@
  *       ↓
  *   recording, frameHistory, intentEngine (demo-specific)
  *
- * Note: Detection runs in Web Worker for 60 FPS rendering!
+ * Note: Detection runs in Web Worker to free up the main thread for rendering.
  * The worker loads MediaPipe models independently and processes frames off the main thread.
  */
 

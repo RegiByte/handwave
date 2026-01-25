@@ -10,23 +10,25 @@ import type { StartedResource } from 'braided'
 import { defineResource } from 'braided'
 import type { GridResolution } from '@handwave/intent-engine'
 import { createAtom } from '@handwave/system'
+import {
+  DEAD_ZONE,
+  createBlendshapesDisplayTask,
+  createFaceLandmarkLabelsTask,
+  createFpsTask,
+  createGestureDurationTask,
+  createGestureLabelsTask,
+  createHandCoordinatesTask,
+  createMultiGridOverlayTask,
+  createPauseIndicatorTask,
+  createPinchRingsTask,
+} from '@handwave/rendering'
 import type { CameraAPI } from './camera'
 import type { LoopResource } from './loop'
 import type { DetectionWorkerResource } from './detectionWorker'
 import {
-  DEAD_ZONE,
-  blendshapesDisplayTask,
-  createFpsTask,
-  createGestureDurationTask,
-  createMultiGridOverlayTask,
   createParticlesTask,
-  createPauseIndicatorTask,
-  createPinchRingsTask,
   createVideoBackdropTask,
-  faceLandmarkLabelsTask,
   faceMeshTask,
-  gestureLabelsTask,
-  handCoordinatesTask,
   handSkeletonTasks,
   videoForegroundTask,
 } from './tasks'
@@ -42,7 +44,7 @@ import { mediapipeKeywords } from '@/core/lib/mediapipe/vocabulary/keywords'
 import { detectionKeywords } from '@/core/lib/mediapipe/vocabulary/detectionKeywords'
 
 import { createChannel } from '@/core/lib/channel'
-import { particleIntentsV2 } from '@/core/lib/intent/intents/particleIntents'
+import { particleIntents } from '@/core/lib/intent/intents/particleIntents'
 
 // ============================================================================
 // Types
@@ -222,14 +224,14 @@ export const runtimeResource = defineResource({
         faceMeshTask,
         // faceMeshIndicesTask,
         // handLandmarksTask,
-        gestureLabelsTask,
+        createGestureLabelsTask(),
         // Debug tasks
         ...handSkeletonTasks,
         // handLandmarkLabelsTask,
-        faceLandmarkLabelsTask,
+        createFaceLandmarkLabelsTask(),
         // smileOverlayTask,
-        blendshapesDisplayTask,
-        handCoordinatesTask,
+        createBlendshapesDisplayTask(),
+        createHandCoordinatesTask(),
         // Intent Engine tasks
         createPinchRingsTask(),
         createGestureDurationTask(frameHistory),
@@ -273,7 +275,7 @@ export const runtimeResource = defineResource({
         setupRenderTasks()
 
         // Configure intent engine with v2 particle intents
-        intentEngine.configure([...particleIntentsV2])
+        intentEngine.configure([...particleIntents])
 
         // Subscribe to intent events for debugging
         // intentEngine.onAny((event: any) => {

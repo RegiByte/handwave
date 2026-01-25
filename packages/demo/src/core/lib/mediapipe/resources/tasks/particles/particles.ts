@@ -12,6 +12,8 @@ import type { Intent } from '@handwave/intent-engine'
 
 // Local module imports - clean separation of concerns
 
+import { mapLandmarkToViewport } from '@handwave/mediapipe'
+import type { RenderContext } from '@handwave/mediapipe';
 import type { ParticleState } from './particleState'
 import {
   COLORS,
@@ -60,8 +62,7 @@ import {
   renderTripleAxisSpiralOverlay,
   renderVortexOverlay,
 } from './particleRendering'
-import { mapLandmarkToViewport, type RenderContext } from '@handwave/mediapipe'
-import { getFaceOvalIndices } from '../face-mesh'
+import { getFaceOvalIndices } from '@/core/lib/mediapipe/resources/tasks/face-mesh'
 
 // Intent imports
 import type { IntentEngineAPI } from '@/core/lib/intent/resources/intentEngineResource'
@@ -559,7 +560,7 @@ export const createParticlesTask = (
         // When 2+ finger vortexes are active, partition particles between them
         // to create distinct visual patterns per hand. Also track nearest vortex
         // distance for stability-breaking flow field amplification.
-        
+
         // Separate vortex and repel forces for dual vortex support
         const vortexForces = resolvedForces.filter(entry => entry.force.type === 'vortex')
         const repelForces = resolvedForces.filter(entry => entry.force.type === 'repel')
