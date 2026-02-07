@@ -19,38 +19,23 @@ import type { EventCallback } from '@handwave/system';
 import type { FrameHistoryResource } from '@/system/resources/frameHistoryResource'
 
 export type IntentEngineAPI = {
-  // Configuration
   configure: (intents: Array<Intent>, config?: Partial<ConflictResolutionConfig>) => void
 
-  // Type-safe event subscription (NEW!)
   subscribe: <TEvent>(
     descriptor: IntentEventDescriptor<TEvent>,
     callback: EventCallback<TEvent>
   ) => Unsubscribe
 
- 
-  // State access
+
   getActiveActions: () => Map<string, ActiveAction>
   getConfig: () => ConflictResolutionConfig
 
-  // Cleanup
   cleanup: () => void
 }
 
-// ============================================================================
-// Resource Definition
-// ============================================================================
-
-/**
- * Intent Engine Resource
- *
- * Uses the new DSL and pattern matching system.
- * Compatible with the same particle system event handlers.
- */
 export const intentEngineResource = defineResource({
   dependencies: ['frameHistory'],
   start: ({ frameHistory }: { frameHistory: FrameHistoryResource }) => {
-    console.log('[Intent Engine v2] Starting...')
 
     // State
     const activeActions = createAtom<Map<string, ActiveAction>>(new Map())
@@ -90,7 +75,6 @@ export const intentEngineResource = defineResource({
     // Frame processing state
     let lastProcessedTimestamp = 0
     let processing = false
-    let frameCount = 0
 
     const processLatestFrame = () => {
       if (processing || intents.length === 0) return
@@ -112,12 +96,6 @@ export const intentEngineResource = defineResource({
         }
 
         lastProcessedTimestamp = latestFrame.timestamp
-        frameCount++
-
-        // Debug log every 300 frames
-        if (frameCount % 300 === 0) {
-          console.log('[Intent Engine v2] Processed', frameCount, 'frames with', intents.length, 'intent(s)')
-        }
 
         // Process frame through v2 intent pipeline
         const result = processFrameV2(
@@ -145,8 +123,6 @@ export const intentEngineResource = defineResource({
       processLatestFrame()
     })
 
-    console.log('[Intent Engine v2] ✅ Started')
-
     // Public API
     const api: IntentEngineAPI = {
       configure: (newIntents: Array<Intent>, newConfig?: Partial<ConflictResolutionConfig>) => {
@@ -154,7 +130,6 @@ export const intentEngineResource = defineResource({
         if (newConfig) {
           config = { ...config, ...newConfig }
         }
-        console.log('[Intent Engine v2] Configured with', intents.length, 'intents')
       },
 
       // Type-safe subscription using event descriptors
@@ -170,7 +145,6 @@ export const intentEngineResource = defineResource({
       getConfig: () => ({ ...config }),
 
       cleanup: () => {
-        console.log('[Intent Engine v2] Stopping...')
         eventBus.clear()
         unsubscribeFrameHistory()
       },

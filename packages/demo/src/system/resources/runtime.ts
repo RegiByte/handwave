@@ -6,34 +6,36 @@
  * Coordinates between camera, loop, and other resources without tight coupling.
  */
 
-import type { StartedResource } from 'braided'
-import { defineResource } from 'braided'
 import type { GridResolution } from '@handwave/intent-engine'
-import { createAtom, createChannel } from '@handwave/system'
+import type {
+  CameraAPI, DetectionWorkerResource, LoopResource, MediaPipeCommand,
+  MediaPipeEvent,
+  RenderContext,
+  SpatialUpdateMessage
+} from '@handwave/mediapipe'
+import { detectionKeywords, mediapipeKeywords } from '@handwave/mediapipe'
 import {
   DEAD_ZONE,
   createBlendshapesDisplayTask,
-  createFaceLandmarkLabelsTask,
   createFpsTask,
-  createGestureDurationTask,
   createGestureLabelsTask,
   createHandCoordinatesTask,
   createMultiGridOverlayTask,
   createPauseIndicatorTask,
-  createPinchRingsTask,
+  createPinchRingsTask
 } from '@handwave/rendering/2d'
-import type { CameraAPI, DetectionWorkerResource, LoopResource, MediaPipeCommand,
-  MediaPipeEvent,
-  RenderTask, SpatialUpdateMessage  } from '@handwave/mediapipe'
-import { detectionKeywords, mediapipeKeywords  } from '@handwave/mediapipe'
+import { createAtom, createChannel } from '@handwave/system'
+import type { TaskDefinition } from '@handwave/system';
+import type { StartedResource } from 'braided'
+import { defineResource } from 'braided'
 import type { IntentEngineAPI } from '@/system/resources/intentEngineResource'
 import type { FrameHistoryAPI } from '@/core/lib/intent'
 
-import { particleIntents } from '@/particles/particleIntents'
-import { videoForegroundTask } from '@/debug/tasks/video-foreground'
 import { faceMeshTask } from '@/debug/tasks/face-mesh'
 import { handSkeletonTasks } from '@/debug/tasks/hand-custom-connections'
 import { createVideoBackdropTask } from '@/debug/tasks/video-backdrop'
+import { videoForegroundTask } from '@/debug/tasks/video-foreground'
+import { particleIntents } from '@/particles/particleIntents'
 import { createParticlesTask } from '@/particles/task/particles'
 
 // ============================================================================
@@ -84,7 +86,6 @@ export const runtimeResource = defineResource({
     camera,
     loop,
     detectionWorker,
-    frameHistory,
     intentEngine,
   }: {
     camera: CameraAPI
@@ -208,7 +209,7 @@ export const runtimeResource = defineResource({
       const currentState = state.get()
 
       // Add render tasks in order (first added = first rendered)
-      const tasks: Array<RenderTask> = [
+      const tasks: Array<TaskDefinition<RenderContext, any>> = [
         createVideoBackdropTask(), // Blurred backdrop
         videoForegroundTask, // Sharp video at full FPS
         faceMeshTask,
@@ -218,13 +219,13 @@ export const runtimeResource = defineResource({
         // Debug tasks
         ...handSkeletonTasks,
         // handLandmarkLabelsTask,
-        createFaceLandmarkLabelsTask(),
+        // createFaceLandmarkLabelsTask(),
         // smileOverlayTask,
         createBlendshapesDisplayTask(),
         createHandCoordinatesTask(),
         // Intent Engine tasks
         createPinchRingsTask(),
-        createGestureDurationTask(frameHistory),
+        // createGestureDurationTask(frameHistory),
         // Particle system (toggleable with 'p' key)
         ...(currentState.particlesEnabled
           ? [createParticlesTask(intentEngine)]
@@ -249,10 +250,6 @@ export const runtimeResource = defineResource({
         renderTaskUnsubscribers.push(loop.addRenderTask(task))
       })
     }
-
-    // ========================================================================
-    // Command Handlers
-    // ========================================================================
 
     const commandHandlers: CommandHandlers = {
       [mediapipeKeywords.commands.start]: async () => {
@@ -309,6 +306,7 @@ export const runtimeResource = defineResource({
       [mediapipeKeywords.commands.pause]: () => {
         console.log('[Runtime] Pausing')
         loop.pause()
+        camera.pause() // Pause video playback
 
         state.update(current => ({
           ...current,
@@ -321,6 +319,7 @@ export const runtimeResource = defineResource({
       [mediapipeKeywords.commands.resume]: () => {
         console.log('[Runtime] Resuming')
         loop.resume()
+        camera.resume() // Resume video playback
 
         state.update(current => ({
           ...current,

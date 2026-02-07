@@ -51,11 +51,6 @@ export const spawnParticlesSimple = intent({
     priority: 0, // Lowest priority - fallback spawn
   },
 })
-
-// ============================================================================
-// VORTEX PARTICLES INTENT
-// ============================================================================
-
 /**
  * Closed fist creates a black-hole vortex that pulls and swirls particles.
  * Both hands can create vortexes simultaneously - the engine creates separate instances per hand.
@@ -65,7 +60,6 @@ export const vortexParticles = intent({
   pattern: gestures.closedFist.withHand('any').primary(),
   resolution: { group: intentGroups.vortex },
 })
-
 /**
  * Finger Vortex (Left Hand): Victory gesture creates logarithmic spiral (golden ratio).
  * 

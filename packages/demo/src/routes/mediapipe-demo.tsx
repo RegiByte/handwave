@@ -152,7 +152,7 @@ function MediaPipeCanvas() {
     }
   }, [runtime])
 
-  const handleVideoDeviceChange = async (
+  const handleVideoDeviceChange = (
     event: ChangeEvent<HTMLSelectElement>,
   ) => {
     const deviceId = event.target.value

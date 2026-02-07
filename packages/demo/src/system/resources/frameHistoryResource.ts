@@ -57,15 +57,9 @@ export type FrameHistoryAPI = {
   subscribe: Subscription<FrameSnapshot>['subscribe']
 }
 
-// ============================================================================
-// Resource Definition
-// ============================================================================
-
 export const frameHistoryResource = defineResource({
   dependencies: ['loop', 'detectionWorker'],
   start: ({ loop }: { loop: LoopResource; detectionWorker: DetectionWorkerResource }) => {
-    console.log('[FrameHistory] Starting...')
-
     const MAX_FRAMES = 300 // ~10 seconds at 30 FPS
     const history = createAtom<Array<FrameSnapshot>>([])
     const historySubscription = createSubscription<FrameSnapshot>()
@@ -80,8 +74,6 @@ export const frameHistoryResource = defineResource({
 
       historySubscription.notify(snapshot)
     })
-
-    console.log('[FrameHistory] ✅ Started')
 
     // Public API
     const api: FrameHistoryAPI = {
@@ -110,7 +102,6 @@ export const frameHistoryResource = defineResource({
     return {
       ...api,
       cleanup: () => {
-        console.log('[FrameHistory] Stopping...')
         unsubscribe()
       },
     }

@@ -4,17 +4,16 @@
   "type": "module",
   "packageManager": "npm@10.0.0",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
-    "dev": "vite dev --port 3000",
-    "build": "vite build",
-    "preview": "npm run build && vite preview",
-    "deploy": "npm run build && wrangler pages deploy dist",
-    "test": "vitest run --config vitest.ts",
-    "lint": "eslint",
-    "format": "prettier",
-    "check": "prettier --write . && eslint --fix",
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "deploy": "turbo build && wrangler pages deploy dist",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "format": "turbo format",
     "type:check": "turbo type:check"
   },
   "dependencies": {

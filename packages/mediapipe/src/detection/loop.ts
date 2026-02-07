@@ -92,6 +92,7 @@ type LoopContext = {
   lastViewport: { x: number; y: number; width: number; height: number } | null
   lastUpdateTimestamp: number
   lastStreamVersion: number
+  lastFpsUpdateTimestamp?: number
 
   // Frame push tracking for metrics
   framePushState: {
@@ -149,7 +150,7 @@ const createFrameRaters = (frameRater: FrameRaterAPI) => {
       maxDeltaMs: 100,
     }),
     videoStreamUpdate: frameRater.throttled('videoStreamUpdate', {
-      intervalMs: 1000 / 30,
+      intervalMs: 1000 / 10,
     }),
     framePush: frameRater.throttled('framePush', {
       intervalMs: 1000 / 25, // Push frames at 30 FPS
@@ -161,7 +162,89 @@ const createFrameRaters = (frameRater: FrameRaterAPI) => {
 }
 
 type LoopFrameRaterKey = 'backdrop' | 'videoStreamUpdate'
-type LoopShouldRun = Record<LoopFrameRaterKey, boolean>
+
+/**
+ * Capture current video frame to offscreen canvas for pause functionality
+ * Called on-demand when pause is invoked
+ */
+const captureVideoFrame = (context: LoopContext) => {
+  const video = context.video
+  const hasVideoFrame =
+    video.videoWidth > 0 &&
+    video.videoHeight > 0 &&
+    context.canvas.width > 0 &&
+    context.canvas.height > 0
+
+  if (!hasVideoFrame) {
+    return
+  }
+
+  const cacheViewport = calculateViewport(
+    video.videoWidth,
+    video.videoHeight,
+    context.canvas.width,
+    context.canvas.height,
+  )
+
+  // Resize offscreen canvas if needed
+  if (
+    context.offscreenCanvas.width !== context.canvas.width ||
+    context.offscreenCanvas.height !== context.canvas.height
+  ) {
+    context.offscreenCanvas.width = context.canvas.width
+    context.offscreenCanvas.height = context.canvas.height
+  }
+
+  // Clear and draw video frame
+  context.offscreenCtx.clearRect(
+    0,
+    0,
+    context.offscreenCanvas.width,
+    context.offscreenCanvas.height,
+  )
+
+  if (context.state.get().mirrored) {
+    context.offscreenCtx.save()
+    context.offscreenCtx.translate(
+      cacheViewport.x + cacheViewport.width,
+      cacheViewport.y,
+    )
+    context.offscreenCtx.scale(-1, 1)
+    context.offscreenCtx.drawImage(
+      video,
+      0,
+      0,
+      cacheViewport.width,
+      cacheViewport.height,
+    )
+    context.offscreenCtx.restore()
+  } else {
+    context.offscreenCtx.drawImage(
+      video,
+      cacheViewport.x,
+      cacheViewport.y,
+      cacheViewport.width,
+      cacheViewport.height,
+    )
+  }
+
+  // Store viewport for paused rendering
+  context.cachedFrameData.viewport = cacheViewport
+}
+
+/**
+ * Clear the cached video frame
+ * Called when resuming from pause
+ */
+const clearVideoFrameCache = (context: LoopContext) => {
+  context.offscreenCtx.clearRect(
+    0,
+    0,
+    context.offscreenCanvas.width,
+    context.offscreenCanvas.height,
+  )
+  context.cachedFrameData.viewport = null
+}
 
 /**
  * Update phase - sends frames to worker (synchronous, fire-and-forget)
@@ -190,28 +273,25 @@ const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
     context.frameRaters.rendering.reset()
   }
 
-  // Update FPS
+  // Update FPS (throttled to avoid excessive React re-renders)
   const currentFps = Math.round(context.frameRaters.rendering.getFPS())
-  if (currentFps !== context.state.get().fps) {
+  const currentState = context.state.get()
+
+  // Only update state once per second to avoid triggering React re-renders on every frame
+  const shouldUpdateFps = timestamp - (context.lastFpsUpdateTimestamp ?? 0) >= 1000
+
+  if (shouldUpdateFps && currentFps !== currentState.fps) {
     context.state.mutate((s) => {
       s.fps = currentFps
       s.frameCount += 1
     })
-  }
-
-  const shouldRun: LoopShouldRun = {
-    backdrop: false,
-    videoStreamUpdate:
-      !isPaused && context.frameRaters.videoStreamUpdate.shouldExecute(deltaMs),
+    context.lastFpsUpdateTimestamp = timestamp
   }
 
   // Check if we should push frame (constant stream, no backpressure)
-  const timeSinceLastPush = timestamp - context.framePushState.lastPushTimestamp
   const shouldPushFrame =
     !isPaused &&
     context.frameRaters.framePush.shouldExecute(deltaMs)
-
-  const executed: Partial<Record<LoopFrameRaterKey, boolean>> = {}
 
   // Push frame to worker for detection (constant stream)
   if (hasVideoFrame && shouldPushFrame && context.detectionWorker.isInitialized()) {
@@ -228,22 +308,6 @@ const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
       context.framePushState.totalFrameCreationMs += frameCreationMs
       context.framePushState.totalFramesPushed += 1
 
-      // Log metrics every 60 frames (~2 seconds at 30 FPS)
-      if (context.framePushState.totalFramesPushed % 60 === 0) {
-        const avgFrameMs = context.framePushState.totalFrameCreationMs / context.framePushState.totalFramesPushed
-        const workerFPS = context.state.get().workerFPS
-        const mainFPS = context.state.get().fps
-
-        console.log('[Loop Metrics]', {
-          avgFrameCreationMs: avgFrameMs.toFixed(2),
-          lastFrameMs: frameCreationMs.toFixed(2),
-          timeSinceLastPush: timeSinceLastPush.toFixed(2),
-          workerFPS,
-          mainFPS,
-          totalFramesPushed: context.framePushState.totalFramesPushed,
-        })
-      }
-
       // Send to worker (zero-copy transfer)
       context.detectionWorker.pushFrame(videoFrame, timestamp)
       context.framePushState.lastPushTimestamp = timestamp
@@ -254,67 +318,12 @@ const update = (context: LoopContext, timestamp: number, deltaMs: number) => {
     }
   }
 
-  // Cache video frame for rendering (when paused)
-  // Draw directly to offscreen canvas - no ImageBitmap creation needed!
-  if (!isPaused && hasVideoFrame && shouldRun.videoStreamUpdate) {
-    const cacheViewport = calculateViewport(
-      video.videoWidth,
-      video.videoHeight,
-      context.canvas.width,
-      context.canvas.height,
-    )
-
-    if (
-      context.offscreenCanvas.width !== context.canvas.width ||
-      context.offscreenCanvas.height !== context.canvas.height
-    ) {
-      context.offscreenCanvas.width = context.canvas.width
-      context.offscreenCanvas.height = context.canvas.height
-    }
-
-    context.offscreenCtx.clearRect(
-      0,
-      0,
-      context.offscreenCanvas.width,
-      context.offscreenCanvas.height,
-    )
-
-    if (context.state.get().mirrored) {
-      context.offscreenCtx.save()
-      context.offscreenCtx.translate(
-        cacheViewport.x + cacheViewport.width,
-        cacheViewport.y,
-      )
-      context.offscreenCtx.scale(-1, 1)
-      context.offscreenCtx.drawImage(
-        video,
-        0,
-        0,
-        cacheViewport.width,
-        cacheViewport.height,
-      )
-      context.offscreenCtx.restore()
-    } else {
-      context.offscreenCtx.drawImage(
-        video,
-        cacheViewport.x,
-        cacheViewport.y,
-        cacheViewport.width,
-        cacheViewport.height,
-      )
-    }
-
-    // Store viewport for paused rendering - no ImageBitmap needed!
-    context.cachedFrameData.viewport = cacheViewport
-    executed.videoStreamUpdate = true
-  }
+  // Offscreen canvas caching removed from update loop!
+  // Cache is now generated on-demand when pause() is called.
+  // This eliminates the throttled 10 FPS overhead during normal operation.
 
   if (!hasVideoFrame) {
     context.cachedFrameData.detectionFrame = null
-  }
-
-  if (executed.videoStreamUpdate) {
-    context.frameRaters.videoStreamUpdate.recordExecution()
   }
 }
 
@@ -335,24 +344,28 @@ const renderFrame = (context: LoopContext, timestamp: number, deltaMs: number) =
   )
 
   // Sync viewport to worker when it changes
-  if (
+  const viewportChanged =
     !context.lastViewport ||
     context.lastViewport.x !== viewport.x ||
     context.lastViewport.y !== viewport.y ||
     context.lastViewport.width !== viewport.width ||
     context.lastViewport.height !== viewport.height
-  ) {
+
+  if (viewportChanged) {
     context.lastViewport = { ...viewport }
     context.detectionWorker.updateViewport(viewport)
+
+    // If paused and viewport changed, recapture the frame
+    // This handles video dimension changes while paused
+    if (isPaused && context.cachedFrameData.viewport) {
+      captureVideoFrame(context)
+    }
   }
 
-  if (
-    context.offscreenCanvas.width !== context.canvas.width ||
-    context.offscreenCanvas.height !== context.canvas.height
-  ) {
-    context.offscreenCanvas.width = context.canvas.width
-    context.offscreenCanvas.height = context.canvas.height
-  }
+  // NOTE: Offscreen canvas auto-resize removed - it was causing 73% of frame time
+  // in 2D canvas reallocation overhead. Render tasks that need it (video-foreground,
+  // video-backdrop) should resize the offscreen canvas themselves on-demand.
+  // This eliminates the bottleneck for Three.js demos that don't use these tasks.
 
   // Read detection results from SharedArrayBuffer if enabled (zero-copy!)
   // This happens every render frame - no message passing overhead
@@ -514,8 +527,8 @@ export const loopResource = defineResource({
     const beforeRender = (context: LoopContext, timestamp: number, deltaMs: number) => {
       context.lastUpdateTimestamp = timestamp
 
+      // Synchronous update - no async operations needed!
       setTimeout(() => {
-        // Synchronous update - no async operations needed!
         try {
           update(context, timestamp, deltaMs)
         } catch (error) {
@@ -580,11 +593,23 @@ export const loopResource = defineResource({
       pause: () => {
         state.update((s) => ({ ...s, paused: true }))
         detectionWorker.sendCommand({ type: 'pause' })
+
+        // Capture current video frame to offscreen canvas (on-demand!)
+        const context = renderLoop.getContext()
+        if (context) {
+          captureVideoFrame(context)
+        }
       },
 
       resume: () => {
         state.update((s) => ({ ...s, paused: false }))
         detectionWorker.sendCommand({ type: 'resume' })
+
+        // Clear the cached video frame
+        const context = renderLoop.getContext()
+        if (context) {
+          clearVideoFrameCache(context)
+        }
       },
 
       togglePause: () => {

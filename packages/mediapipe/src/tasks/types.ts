@@ -1,6 +1,7 @@
 import type { EnrichedDetectionFrame } from '@handwave/intent-engine'
 import type { CanvasAPI } from '../detection/canvas'
 import type { FrameRaterAPI } from '../detection/frameRater'
+import { TaskDefinition } from '@handwave/system'
 
 export type RenderContext = {
   ctx: CanvasRenderingContext2D
@@ -48,10 +49,4 @@ export type RenderContext = {
  * - A simple function that receives RenderContext
  * - A lifecycle task with init/execute/cleanup
  */
-export type RenderTask = 
-  | ((context: RenderContext) => void)
-  | {
-      init?: () => void | Promise<void>
-      execute: (context: RenderContext) => void
-      cleanup?: () => void
-    }
+export type RenderTask = TaskDefinition<RenderContext, any>

@@ -153,11 +153,11 @@ export function createEventBus(options: EventBusOptions = {}): EventBus {
 
     // Return unsubscribe function
     return () => {
-      const callbacks = subscriptions.get(eventType)
-      if (callbacks) {
-        callbacks.delete(callback)
+      const cleanupCallbacks = subscriptions.get(eventType)
+      if (cleanupCallbacks) {
+        cleanupCallbacks.delete(callback)
         // Clean up empty sets
-        if (callbacks.size === 0) {
+        if (cleanupCallbacks.size === 0) {
           subscriptions.delete(eventType)
         }
       }

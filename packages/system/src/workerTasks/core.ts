@@ -45,7 +45,7 @@ export type TaskExecutionContext<TProgress> = {
  * All tasks have the same shape - context is always present
  * Progress is optional (defaults to never)
  */
-export type TaskDefinition<
+export type WorkerTaskDefinition<
   TInput extends ZodType,
   TOutput extends ZodType,
   TProgress extends ZodType = never,
@@ -64,14 +64,14 @@ export type TaskDefinition<
  * Registry of tasks
  * Use `as const` when defining tasks for better type inference
  */
-export type TaskRegistry = Record<string, TaskDefinition<any, any, any>>
+export type TaskRegistry = Record<string, WorkerTaskDefinition<any, any, any>>
 
 /**
  * Helper to check if task has progress schema
  */
 export function hasProgress(
-  task: TaskDefinition<any, any, any>
-): task is TaskDefinition<any, any, any> & { progress: ZodType<any> } {
+  task: WorkerTaskDefinition<any, any, any>
+): task is WorkerTaskDefinition<any, any, any> & { progress: ZodType<any> } {
   return 'progress' in task && task.progress !== undefined
 }
 
@@ -119,8 +119,8 @@ export function defineTask<
   TOutput extends ZodType,
   TProgress extends ZodType = never,
 >(
-  definition: TaskDefinition<TInput, TOutput, TProgress>
-): TaskDefinition<TInput, TOutput, TProgress> {
+  definition: WorkerTaskDefinition<TInput, TOutput, TProgress>
+): WorkerTaskDefinition<TInput, TOutput, TProgress> {
   return definition
 }
 

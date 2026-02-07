@@ -28,14 +28,14 @@ type TaskFn<TContext> = (context: TContext) => void
 /**
  * Task can be either a simple function or an object with lifecycle
  */
-type TaskDefinition<TContext, TContextInit> =
+export type TaskDefinition<TContext, TContextInit> =
     | TaskWithLifecycle<TContext, TContextInit>
     | TaskFn<TContext>
 
 /**
  * Task pipeline API
  */
-type TaskPipeline<TContext, TContextInit> = {
+export type TaskPipeline<TContext, TContextInit> = {
     /**
      * Add a task to the pipeline.
      * Returns unsubscribe function to remove the task.

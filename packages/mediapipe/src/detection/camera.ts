@@ -1,5 +1,6 @@
 import { defineResource } from 'braided'
 import { createAtom } from '@handwave/system'
+import { useEffect } from 'react'
 
 export type CameraConfig = {
   facingMode?: 'user' | 'environment'
@@ -22,7 +23,17 @@ export type CameraAPI = {
   video: HTMLVideoElement
   config: CameraConfig
   stop: () => void
+  pause: () => void
+  resume: () => void
   setDevices: (selection: CameraDeviceSelection) => Promise<void>
+  /**
+   * React hook to mount the video element into a container ref
+   * Handles mounting, unmounting, and mirroring
+   */
+  useVideoContainer: (
+    containerRef: React.RefObject<HTMLDivElement | null>,
+    options?: { mirrored?: boolean },
+  ) => void
 }
 
 export type CameraState = {
@@ -188,6 +199,14 @@ export const createCameraResource = (config: CameraConfig = {}) =>
             video.pause()
             video.srcObject = null
           },
+          pause: () => {
+            video.pause()
+          },
+          resume: () => {
+            video.play().catch((err) => {
+              console.warn('[Camera] Failed to resume video:', err)
+            })
+          },
           setDevices: async (selection) => {
             try {
               await replaceStream(selection)
@@ -207,6 +226,36 @@ export const createCameraResource = (config: CameraConfig = {}) =>
               })
               throw err
             }
+          },
+
+          useVideoContainer: (
+            containerRef: React.RefObject<HTMLDivElement | null>,
+            options: { mirrored?: boolean } = {},
+          ) => {
+            useEffect(() => {
+              const container = containerRef.current
+              if (!container) return
+
+              // Apply styles to video element
+              video.style.position = 'absolute'
+              video.style.top = '0'
+              video.style.left = '0'
+              video.style.width = '100%'
+              video.style.height = '100%'
+              video.style.objectFit = 'contain' // Show full video, maintain aspect ratio
+              video.style.transform = options.mirrored ? 'scaleX(-1)' : 'none'
+
+              // Check if video is already in this container
+              if (!container.contains(video)) {
+                container.appendChild(video)
+              }
+
+              return () => {
+                if (container.contains(video)) {
+                  container.removeChild(video)
+                }
+              }
+            }, [containerRef, options.mirrored])
           },
         }
 

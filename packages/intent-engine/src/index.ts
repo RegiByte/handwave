@@ -41,23 +41,3 @@ export * from './dsl'
 
 export const PACKAGE_NAME = '@handwave/intent-engine'
 export const VERSION = '0.1.0'
-
-// ============================================================================
-// Utilities (temporary - for verification)
-// ============================================================================
-
-/**
- * Simple utility to verify the package is working
- */
-export function createSimpleCounter() {
-  let count = 0
-
-  return {
-    increment: () => ++count,
-    decrement: () => --count,
-    get: () => count,
-    reset: () => {
-      count = 0
-    },
-  }
-}

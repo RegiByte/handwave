@@ -17,5 +17,5 @@
     "vite.config.ts",
     "scripts/**/*.ts",
     "prettier.config.js"
-, "../system/src/channel.ts"  ]
+  ]
 }

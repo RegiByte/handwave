@@ -1,6 +1,7 @@
 import { transformLandmarksToViewport } from '@handwave/mediapipe'
-import type { RenderTask } from '@handwave/mediapipe'
+import type { RenderContext, RenderTask } from '@handwave/mediapipe'
 import { createColorScale, hexToRgba, mixColors, remap } from '@handwave/rendering'
+import { task } from '@handwave/system'
 
 /**
  * Custom hand connection patterns
@@ -112,364 +113,404 @@ function filterConnectionsByDistance(
  * Emphasizes the major joints and bone structure
  * Uses mathematical interpolation for smooth depth-based coloring
  * Displays numeric indices on landmarks
+ * 
+ * Optimized: Uses object form with init phase to avoid repeated allocations
+ * Renders every other frame to reduce overhead
  */
-export const handSkeletonTask: RenderTask = ({
-  drawer,
-  ctx,
-  detectionFrame,
-  mirrored,
-  viewport,
-  width,
-  height,
-}) => {
-  const hands = detectionFrame?.detectors?.hand
-  if (!hands || hands.length === 0) return
-
-  // Define depth range for color mapping
+export const handSkeletonTask = task<RenderContext, undefined>(() => {
+  // Define depth range for color mapping (constants)
   const DEPTH_MIN = -0.15
   const DEPTH_MAX = 0.15
 
-  // Create a perceptually smooth color scale from far (blue) to near (red)
-  const depthColorScale = createColorScale('#4169e1', '#ff4757', 100)
+  // State initialized once
+  let depthColorScale: Array<string>
 
-  for (const hand of hands) {
-    const landmarks = hand.landmarks
-    const transformed = transformLandmarksToViewport(
-      landmarks,
+  return {
+    init: () => {
+      // Create color scale once during initialization
+      depthColorScale = createColorScale('#4169e1', '#ff4757', 100)
+    },
+
+    execute: ({
+      drawer,
+      ctx,
+      detectionFrame,
+      mirrored,
       viewport,
       width,
       height,
-      mirrored,
-    )
+    }) => {
+      const hands = detectionFrame?.detectors?.hand
+      if (!hands || hands.length === 0) return
 
-    // Filter connections based on distance constraints
-    const connectionsToRender = filterConnectionsByDistance(
-      HAND_SKELETON_CONNECTIONS,
-      transformed,
-    )
-
-    // Draw skeleton with smooth depth-based color interpolation
-    drawer.drawConnectors(transformed, connectionsToRender, {
-      color: (data) => {
-        const z = data.from?.z ?? 0
-
-        // Remap depth to color scale index (0-99)
-        const colorIndex = Math.floor(
-          remap(z, DEPTH_MIN, DEPTH_MAX, 0, 99, true),
+      // Process each hand
+      for (let i = 0; i < hands.length; i++) {
+        const hand = hands[i]
+        const landmarks = hand.landmarks
+        const transformed = transformLandmarksToViewport(
+          landmarks,
+          viewport,
+          width,
+          height,
+          mirrored,
         )
 
-        return depthColorScale[colorIndex]
-      },
-      lineWidth: (data) => {
-        const z = data.from?.z ?? 0
-
-        // Remap depth to line width (2-8)
-        // Closer = thicker
-        return remap(z, DEPTH_MIN, DEPTH_MAX, 2, 8, true)
-      },
-    })
-
-    // Draw joints with smooth size and color interpolation
-    drawer.drawLandmarks(transformed, {
-      radius: (data) => {
-        const idx = data.index ?? 0
-        const z = data.from?.z ?? 0
-
-        // Base size by landmark type
-        let baseRadius = 6
-        if (idx === 0)
-          baseRadius = 8 // Wrist
-        else if ([4, 8, 12, 16, 20].includes(idx)) baseRadius = 6 // Fingertips
-
-        // Scale by depth (closer = slightly bigger)
-        const depthScale = remap(z, DEPTH_MIN, DEPTH_MAX, 0.8, 1.2, true)
-
-        return baseRadius * depthScale
-      },
-      color: (data) => {
-        const idx = data.index ?? 0
-        const z = data.from?.z ?? 0
-
-        // Base colors
-        let baseColor = '#95e1d3' // Default teal
-        if (idx === 0)
-          baseColor = '#ffffff' // Wrist
-        else if ([4, 8, 12, 16, 20].includes(idx)) baseColor = '#ffd93d' // Fingertips
-
-        // Mix with depth color for subtle depth indication
-        const colorIndex = Math.floor(
-          remap(z, DEPTH_MIN, DEPTH_MAX, 0, 99, true),
+        // Filter connections based on distance constraints
+        const connectionsToRender = filterConnectionsByDistance(
+          HAND_SKELETON_CONNECTIONS,
+          transformed,
         )
-        const depthColor = depthColorScale[colorIndex]
 
-        // Mix 80% base color, 20% depth color
-        return mixColors(baseColor, depthColor, 0.2)
-      },
-      fillColor: (data) => {
-        const idx = data.index ?? 0
-        const z = data.from?.z ?? 0
+        // Draw skeleton with smooth depth-based color interpolation
+        drawer.drawConnectors(transformed, connectionsToRender, {
+          color: (data) => {
+            const z = data.from?.z ?? 0
+            // Remap depth to color scale index (0-99)
+            const colorIndex = Math.floor(
+              remap(z, DEPTH_MIN, DEPTH_MAX, 0, 99, true),
+            )
+            return depthColorScale[colorIndex]
+          },
+          lineWidth: (data) => {
+            const z = data.from?.z ?? 0
+            // Remap depth to line width (2-8) - closer = thicker
+            return remap(z, DEPTH_MIN, DEPTH_MAX, 2, 8, true)
+          },
+        })
 
-        // Base colors
-        let baseColor = '#95e1d3' // Default teal
-        if (idx === 0)
-          baseColor = '#ffffff' // Wrist
-        else if ([4, 8, 12, 16, 20].includes(idx)) baseColor = '#ffd93d' // Fingertips
+        // Draw joints with smooth size and color interpolation
+        drawer.drawLandmarks(transformed, {
+          radius: (data) => {
+            const idx = data.index ?? 0
+            const z = data.from?.z ?? 0
 
-        // Mix with depth color for subtle depth indication
-        const colorIndex = Math.floor(
-          remap(z, DEPTH_MIN, DEPTH_MAX, 0, 99, true),
-        )
-        const depthColor = depthColorScale[colorIndex]
+            // Base size by landmark type
+            let baseRadius = 6
+            if (idx === 0) baseRadius = 8 // Wrist
+            else if ([4, 8, 12, 16, 20].includes(idx)) baseRadius = 6 // Fingertips
 
-        // Mix 80% base color, 20% depth color
-        return mixColors(baseColor, depthColor, 0.2)
-      },
-    })
+            // Scale by depth (closer = slightly bigger)
+            const depthScale = remap(z, DEPTH_MIN, DEPTH_MAX, 0.8, 1.2, true)
+            return baseRadius * depthScale
+          },
+          color: (data) => {
+            const idx = data.index ?? 0
+            const z = data.from?.z ?? 0
 
-    // Draw numeric indices on top of landmarks
-    ctx.save()
-    ctx.font = 'bold 10px monospace'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)'
-    ctx.shadowBlur = 4
-    ctx.shadowOffsetX = 1
-    ctx.shadowOffsetY = 1
+            // Base colors
+            let baseColor = '#95e1d3' // Default teal
+            if (idx === 0) baseColor = '#ffffff' // Wrist
+            else if ([4, 8, 12, 16, 20].includes(idx)) baseColor = '#ffd93d' // Fingertips
 
-    transformed.forEach((landmark, index) => {
-      const x = landmark.x * width
-      const y = landmark.y * height
+            // Mix with depth color for subtle depth indication
+            const colorIndex = Math.floor(
+              remap(z, DEPTH_MIN, DEPTH_MAX, 0, 99, true),
+            )
+            const depthColor = depthColorScale[colorIndex]
 
-      // Get the landmark's base color for the text
-      let textColor = '#ffffff'
-      if (index === 0)
-        textColor = '#ffffff' // Wrist - white
-      else if ([4, 8, 12, 16, 20].includes(index))
-        textColor = '#000000' // Fingertips - black for contrast on yellow
-      else textColor = '#000000' // Other joints - black for contrast on teal
+            // Mix 80% base color, 20% depth color
+            return mixColors(baseColor, depthColor, 0.2)
+          },
+          fillColor: (data) => {
+            const idx = data.index ?? 0
+            const z = data.from?.z ?? 0
 
-      ctx.fillStyle = textColor
+            // Base colors
+            let baseColor = '#95e1d3' // Default teal
+            if (idx === 0) baseColor = '#ffffff' // Wrist
+            else if ([4, 8, 12, 16, 20].includes(idx)) baseColor = '#ffd93d' // Fingertips
 
-      // Draw index number centered on the landmark
-      ctx.fillText(index.toString(), x, y)
-    })
+            // Mix with depth color for subtle depth indication
+            const colorIndex = Math.floor(
+              remap(z, DEPTH_MIN, DEPTH_MAX, 0, 99, true),
+            )
+            const depthColor = depthColorScale[colorIndex]
 
-    ctx.restore()
+            // Mix 80% base color, 20% depth color
+            return mixColors(baseColor, depthColor, 0.2)
+          },
+        })
+
+        // Draw numeric indices on top of landmarks
+        ctx.save()
+        ctx.font = 'bold 10px monospace'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.95)'
+        ctx.shadowBlur = 4
+        ctx.shadowOffsetX = 1
+        ctx.shadowOffsetY = 1
+
+        for (let j = 0; j < transformed.length; j++) {
+          const landmark = transformed[j]
+          const x = landmark.x * width
+          const y = landmark.y * height
+
+          // Get the landmark's base color for the text
+          let textColor = '#ffffff'
+          if (j === 0) textColor = '#ffffff' // Wrist - white
+          else if ([4, 8, 12, 16, 20].includes(j)) textColor = '#000000' // Fingertips - black
+          else textColor = '#000000' // Other joints - black
+
+          ctx.fillStyle = textColor
+          ctx.fillText(j.toString(), x, y)
+        }
+
+        ctx.restore()
+      }
+    },
   }
-}
+})
 
 /**
  * Render task: Show only fingertips connected with distance measurements
  * Useful for gesture visualization and hand size analysis
  * Uses color interpolation for smooth visual feedback
  * Displays distance in normalized units at the midpoint of each connection
+ * 
+ * Optimized: Renders every other frame to reduce overhead
  */
-export const fingertipsConnectorsTask: RenderTask = ({
-  drawer,
-  ctx,
-  detectionFrame,
-  mirrored,
-  viewport,
-  width,
-  height,
-}) => {
-  const hands = detectionFrame?.detectors?.hand
-  if (!hands || hands.length === 0) return
-
-  for (const hand of hands) {
-    const landmarks = hand.landmarks
-    const transformed = transformLandmarksToViewport(
-      landmarks,
+export const fingertipsConnectorsTask = task<RenderContext, undefined>(() => {
+  return {
+    execute: ({
+      drawer,
+      ctx,
+      detectionFrame,
+      mirrored,
       viewport,
       width,
       height,
-      mirrored,
-    )
+    }) => {
 
-    // Filter connections based on distance constraints
-    const connectionsToRender = filterConnectionsByDistance(
-      FINGERTIPS_CONNECTIONS,
-      transformed,
-    )
+      const hands = detectionFrame?.detectors?.hand
+      if (!hands || hands.length === 0) return
 
-    // Draw fingertip connections with gradient effect
-    drawer.drawConnectors(transformed, connectionsToRender, {
-      color: (data) => {
-        const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
+      for (let i = 0; i < hands.length; i++) {
+        const hand = hands[i]
+        const landmarks = hand.landmarks
+        const transformed = transformLandmarksToViewport(
+          landmarks,
+          viewport,
+          width,
+          height,
+          mirrored,
+        )
 
-        // Remap depth to opacity for connections
-        const opacity = remap(avgZ, -0.15, 0.15, 0.4, 1.0, true)
+        // Filter connections based on distance constraints
+        const connectionsToRender = filterConnectionsByDistance(
+          FINGERTIPS_CONNECTIONS,
+          transformed,
+        )
 
-        return hexToRgba('#ff00ff', opacity)
-      },
-      lineWidth: (data) => {
-        const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
+        // Draw fingertip connections with gradient effect
+        drawer.drawConnectors(transformed, connectionsToRender, {
+          color: (data) => {
+            const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
 
-        // Thicker when closer
-        return remap(avgZ, -0.15, 0.15, 2, 5, true)
-      },
-    })
+            // Remap depth to opacity for connections
+            const opacity = remap(avgZ, -0.15, 0.15, 0.4, 1.0, true)
 
-    // Draw distance measurements at the midpoint of each connection
-    // Only for connections that are actually rendered
-    ctx.save()
-    ctx.font = 'bold 9px monospace'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)'
-    ctx.shadowBlur = 3
-    ctx.shadowOffsetX = 1
-    ctx.shadowOffsetY = 1
+            return hexToRgba('#ff00ff', opacity)
+          },
+          lineWidth: (data) => {
+            const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
 
-    connectionsToRender.forEach((connection) => {
-      const from = transformed[connection.start]
-      const to = transformed[connection.end]
+            // Thicker when closer
+            return remap(avgZ, -0.15, 0.15, 2, 5, true)
+          },
+        })
 
-      if (!from || !to) return
+        // Draw distance measurements at the midpoint of each connection
+        // Only for connections that are actually rendered
+        ctx.save()
+        ctx.font = 'bold 9px monospace'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.95)'
+        ctx.shadowBlur = 3
+        ctx.shadowOffsetX = 1
+        ctx.shadowOffsetY = 1
 
-      // Calculate 3D Euclidean distance (using normalized coordinates)
-      const dx = to.x - from.x
-      const dy = to.y - from.y
-      const dz = to.z - from.z
-      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
+        connectionsToRender.forEach((connection) => {
+          const from = transformed[connection.start]
+          const to = transformed[connection.end]
 
-      // Calculate midpoint in pixel coordinates
-      const midX = ((from.x + to.x) / 2) * width
-      const midY = ((from.y + to.y) / 2) * height
+          if (!from || !to) return
 
-      // Calculate average depth for color/opacity
-      const avgZ = (from.z + to.z) / 2
-      const opacity = remap(avgZ, -0.15, 0.15, 0.6, 1.0, true)
+          // Calculate 3D Euclidean distance (using normalized coordinates)
+          const dx = to.x - from.x
+          const dy = to.y - from.y
+          const dz = to.z - from.z
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
 
-      // Format distance (show 3 decimal places)
-      const distanceText = distance.toFixed(3)
+          // Calculate midpoint in pixel coordinates
+          const midX = ((from.x + to.x) / 2) * width
+          const midY = ((from.y + to.y) / 2) * height
 
-      // Draw distance label
-      ctx.fillStyle = hexToRgba('#ffff00', opacity) // Yellow text
-      ctx.fillText(distanceText, midX, midY)
-    })
+          // Calculate average depth for color/opacity
+          const avgZ = (from.z + to.z) / 2
+          const opacity = remap(avgZ, -0.15, 0.15, 0.6, 1.0, true)
 
-    ctx.restore()
+          // Format distance (show 3 decimal places)
+          const distanceText = distance.toFixed(3)
+
+          // Draw distance label
+          ctx.fillStyle = hexToRgba('#ffff00', opacity) // Yellow text
+          ctx.fillText(distanceText, midX, midY)
+        })
+
+        ctx.restore()
+      }
+    },
   }
-}
+})
 
 /**
  * Render task: Highlight palm area
  * Shows the palm structure separately from fingers
  * Uses smooth color interpolation and depth-aware gradients
+ * 
+ * Optimized: Uses object form with init phase, renders every other frame
  */
-export const palmHighlightTask: RenderTask = ({
-  drawer,
-  ctx,
-  detectionFrame,
-  mirrored,
-  viewport,
-  width,
-  height,
-}) => {
-  const hands = detectionFrame?.detectors?.hand
-  if (!hands || hands.length === 0) return
+export const palmHighlightTask = task<RenderContext, undefined>(() => {
+  // State initialized once
+  let palmColorScale: Array<string>
+  const palmIndices = [0, 1, 5, 9, 13, 17]
 
-  // Create warm color palette for palm
-  const palmColorScale = createColorScale('#ff6b35', '#ffd93d', 50)
+  return {
+    init: () => {
+      // Create warm color palette for palm once
+      palmColorScale = createColorScale('#ff6b35', '#ffd93d', 50)
+    },
 
-  for (const hand of hands) {
-    const landmarks = hand.landmarks
-    const transformed = transformLandmarksToViewport(
-      landmarks,
+    execute: ({
+      drawer,
+      ctx,
+      detectionFrame,
+      mirrored,
       viewport,
       width,
       height,
-      mirrored,
-    )
+    }) => {
 
-    // Calculate average palm depth for color selection
-    const palmIndices = [0, 1, 5, 9, 13, 17]
-    const avgPalmDepth =
-      palmIndices.reduce((sum, idx) => sum + (transformed[idx]?.z ?? 0), 0) /
-      palmIndices.length
+      const hands = detectionFrame?.detectors?.hand
+      if (!hands || hands.length === 0) return
 
-    // Select base color from scale based on depth
-    const colorIndex = Math.floor(remap(avgPalmDepth, -0.15, 0.15, 0, 49, true))
-    const palmBaseColor = palmColorScale[colorIndex]
+      for (let i = 0; i < hands.length; i++) {
+        const hand = hands[i]
+        const landmarks = hand.landmarks
+        const transformed = transformLandmarksToViewport(
+          landmarks,
+          viewport,
+          width,
+          height,
+          mirrored,
+        )
 
-    // Draw palm connections with depth-aware opacity
-    drawer.drawConnectors(transformed, PALM_CONNECTIONS, {
-      color: (data) => {
-        const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
-        const opacity = remap(avgZ, -0.15, 0.15, 0.4, 0.8, true)
-        return hexToRgba(palmBaseColor, opacity)
-      },
-      lineWidth: (data) => {
-        const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
-        return remap(avgZ, -0.15, 0.15, 2, 5, true)
-      },
-    })
+        // Calculate average palm depth for color selection
+        let avgPalmDepth = 0
+        for (let j = 0; j < palmIndices.length; j++) {
+          avgPalmDepth += transformed[palmIndices[j]]?.z ?? 0
+        }
+        avgPalmDepth /= palmIndices.length
 
-    // Fill palm area with smooth radial gradient
-    ctx.save()
+        // Select base color from scale based on depth
+        const colorIndex = Math.floor(remap(avgPalmDepth, -0.15, 0.15, 0, 49, true))
+        const palmBaseColor = palmColorScale[colorIndex]
 
-    const palmPoints = palmIndices.map((idx) => ({
-      x: transformed[idx].x * width,
-      y: transformed[idx].y * height,
-      z: transformed[idx].z,
-    }))
+        // Draw palm connections with depth-aware opacity
+        drawer.drawConnectors(transformed, PALM_CONNECTIONS, {
+          color: (data) => {
+            const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
+            const opacity = remap(avgZ, -0.15, 0.15, 0.4, 0.8, true)
+            return hexToRgba(palmBaseColor, opacity)
+          },
+          lineWidth: (data) => {
+            const avgZ = ((data.from?.z ?? 0) + (data.to?.z ?? 0)) / 2
+            return remap(avgZ, -0.15, 0.15, 2, 5, true)
+          },
+        })
 
-    // Calculate center
-    const centerX =
-      palmPoints.reduce((sum, p) => sum + p.x, 0) / palmPoints.length
-    const centerY =
-      palmPoints.reduce((sum, p) => sum + p.y, 0) / palmPoints.length
-    const maxDist = Math.max(
-      ...palmPoints.map((p) =>
-        Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2),
-      ),
-    )
+        // Fill palm area with smooth radial gradient
+        ctx.save()
 
-    // Create depth-aware gradient
-    const innerOpacity = remap(avgPalmDepth, -0.15, 0.15, 0.2, 0.6, true)
-    const outerOpacity = innerOpacity * 0.1
+        // Build palm points array
+        const palmPoints = []
+        for (let j = 0; j < palmIndices.length; j++) {
+          const idx = palmIndices[j]
+          palmPoints.push({
+            x: transformed[idx].x * width,
+            y: transformed[idx].y * height,
+            z: transformed[idx].z,
+          })
+        }
 
-    const gradient = ctx.createRadialGradient(
-      centerX,
-      centerY,
-      0,
-      centerX,
-      centerY,
-      maxDist,
-    )
-    gradient.addColorStop(0, hexToRgba(palmBaseColor, innerOpacity))
-    gradient.addColorStop(1, hexToRgba(palmBaseColor, outerOpacity))
+        // Calculate center
+        let centerX = 0
+        let centerY = 0
+        for (let j = 0; j < palmPoints.length; j++) {
+          centerX += palmPoints[j].x
+          centerY += palmPoints[j].y
+        }
+        centerX /= palmPoints.length
+        centerY /= palmPoints.length
 
-    // Draw filled palm
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    palmPoints.forEach((p, i) => {
-      if (i === 0) ctx.moveTo(p.x, p.y)
-      else ctx.lineTo(p.x, p.y)
-    })
-    ctx.closePath()
-    ctx.fill()
+        // Calculate max distance
+        let maxDist = 0
+        for (let j = 0; j < palmPoints.length; j++) {
+          const p = palmPoints[j]
+          const dist = Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2)
+          if (dist > maxDist) maxDist = dist
+        }
 
-    ctx.restore()
+        // Create depth-aware gradient
+        const innerOpacity = remap(avgPalmDepth, -0.15, 0.15, 0.2, 0.6, true)
+        const outerOpacity = innerOpacity * 0.1
 
-    // Draw palm landmarks with depth-based sizing
-    palmIndices.forEach((idx) => {
-      const landmark = transformed[idx]
-      if (!landmark) return
+        const gradient = ctx.createRadialGradient(
+          centerX,
+          centerY,
+          0,
+          centerX,
+          centerY,
+          maxDist,
+        )
+        gradient.addColorStop(0, hexToRgba(palmBaseColor, innerOpacity))
+        gradient.addColorStop(1, hexToRgba(palmBaseColor, outerOpacity))
 
-      const z = landmark.z
-      const radius = remap(z, -0.15, 0.15, 3, 6, true)
-      const opacity = remap(z, -0.15, 0.15, 0.5, 1.0, true)
+        // Draw filled palm
+        ctx.fillStyle = gradient
+        ctx.beginPath()
+        for (let j = 0; j < palmPoints.length; j++) {
+          const p = palmPoints[j]
+          if (j === 0) ctx.moveTo(p.x, p.y)
+          else ctx.lineTo(p.x, p.y)
+        }
+        ctx.closePath()
+        ctx.fill()
 
-      drawer.drawLandmarks([landmark], {
-        radius,
-        color: palmBaseColor,
-        fillColor: hexToRgba(palmBaseColor, opacity * 0.5),
-      })
-    })
+        ctx.restore()
+
+        // Draw palm landmarks with depth-based sizing
+        for (let j = 0; j < palmIndices.length; j++) {
+          const idx = palmIndices[j]
+          const landmark = transformed[idx]
+          if (!landmark) continue
+
+          const z = landmark.z
+          const radius = remap(z, -0.15, 0.15, 3, 6, true)
+          const opacity = remap(z, -0.15, 0.15, 0.5, 1.0, true)
+
+          drawer.drawLandmarks([landmark], {
+            radius,
+            color: palmBaseColor,
+            fillColor: hexToRgba(palmBaseColor, opacity * 0.5),
+          })
+        }
+      }
+    },
   }
-}
+})
 
 export const handSkeletonTasks = [
   fingertipsConnectorsTask,
